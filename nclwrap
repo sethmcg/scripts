@@ -1,0 +1,86 @@
+#!/bin/tcsh -f
+
+# wrapper script for making passing of arguments to NCL scripts easier.
+
+# invocation: nclwrap nclscript infile [ [otherfile] outfile]
+
+
+if ($#argv < 2) then
+  echo Usage: nclwrap nclscript infile \[ \[otherfile\] outfile\]
+  exit
+
+endif
+
+set ncl = `basename $1 .ncl`
+set var = `basename $2 | cut -f 1 -d _ | cut -f 1 -d .`
+
+if ($ncl == regrid-rcm2rcm || $ncl == coarsen) then
+  set echo
+  ncl -Q -n $1 datafile=\"$2\" gridfile=\"$3\" outfile=\"$4\" varname=\"$var\"
+  unset echo
+  exit
+endif
+
+if ($ncl == patch-regrid) then
+  set echo
+  ncl -Q -n $1 infile=\"$2\" wgtfile=\"$3\" outfile=\"$4\" varname=\"$var\"
+  unset echo
+  exit
+endif
+
+
+if ($ncl == aggregate) then
+  set echo
+  ncl -Q -n $1 infile=\"$2\" outfile=\"$3\" interval=\"$4\" varname=\"$var\" $argv[5-]
+  unset echo
+  exit
+endif
+
+
+if ($ncl == wind-vector-plot) then
+  set echo
+  ncl -Q -n $1 ufile=\"$2\" vfile=\"$3\" outfile=\"$4\" $argv[5-]
+  unset echo
+  exit
+endif
+
+
+if  ($ncl == gap-find ) then
+  ncl -Q -n  $1 infile=\"$2\" outfile=\"$3\" varname=\"$var\" $argv[4-]
+  exit
+endif
+
+
+if  ($ncl == text2mask ) then
+  set echo
+  ncl -Q -n  $1 infile=\"$2\" $argv[3-]
+  unset echo
+  exit
+endif
+
+
+if  ($ncl == datetime ) then
+  ncl -Q -n  $1 infile=\"$2\" $argv[3-]
+  exit
+endif
+
+
+if ($#argv == 2) then
+  ncl -Q -n $1 varname=\"$var\" infile=\"$2\"
+  exit
+endif
+
+
+
+# [should] work for: time-section-plot, plot-timestep, 3d-plots
+
+set echo
+ncl -Q -n  $1  varname=\"$var\" infile=\"$2\" outfile=\"$3\" $argv[4-]
+unset echo
+exit
+
+endif
+
+
+# Copyright 2009-2012 Univ. Corp. for Atmos. Research
+# Author: Seth McGinnis, mcginnis@ucar.edu

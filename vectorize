@@ -1,0 +1,27 @@
+#!/bin/tcsh -f
+
+## given a file of commands (one command per line), runs them in
+## parallel on cheyenne using commandfile MPMD approach
+
+set tmp = `mktemp -d`
+set cmd = $tmp/cmdfile
+set out = $tmp/out
+set err = $tmp/err
+set pbs = $tmp/pbs
+set job = `basename $1`
+
+## commands need to be wrapped in tcsh shell invocation
+
+sed "s|\(.*\)|tcsh -c '\1 >>\& $tmp/log'|g" $1 > $cmd
+
+set nt = `cat $cmd | wc -l`
+set nn =  `perl -w -e "use POSIX; print ceil($nt/36)"`
+
+sed -e "s|NTASK|$nt|; s|NNODE|$nn|; s|JOBNAME|$job|; s|OUTFILE|$out|; s|ERRFILE|$err|; s|CMDFILE|$cmd|" ~/template.pbs > $pbs
+
+qsub < $pbs &
+
+
+
+# Copyright 2017 Univ. Corp. for Atmos. Research
+# Author: Seth McGinnis, mcginnis@ucar.edu

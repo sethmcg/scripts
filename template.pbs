@@ -1,0 +1,43 @@
+#!/bin/tcsh
+
+##### parameters for PBS scheduling via qsub
+##### submit jobs as "qsub scriptname"
+
+# account code to charge to
+#PBS -A P86850057          
+
+# which queue to use
+#PBS -q premium
+
+# job name
+#PBS -N JOBNAME
+
+# stdout file
+#PBS -o OUTFILE
+
+# stderr file
+#PBS -e ERRFILE
+
+# runtime limit
+#PBS -l walltime=00:10:00
+
+# CPU resource request
+# ntask = number of lines in file
+# nnode = ceiling(NTASK / 36)
+# ncpus is always set to 36 (use all CPUs in node)
+# mpiprocs is always set to 36 also (1 process per CPU)
+# ompthreads is always set to 1 (1 thread per process)
+#PBS -l select=NNODE:ncpus=36:mpiprocs=36:ompthreads=1
+
+#source /glade/u/apps/opt/lmod/4.2.1/init/tcsh 
+
+module load mpt
+module load netcdf
+module load R
+module load nco
+module load cdo
+module load ncl
+
+setenv MPI_SHEPHERD true
+
+mpiexec_mpt -n NTASK launch_cf.sh CMDFILE

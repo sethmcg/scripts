@@ -1,0 +1,66 @@
+#!/usr/bin/perl
+
+## This script converts a date string to the corresponding time for a
+## given netcdf file by using the NCL function ut_inv_calendar.
+
+$usage = "Usage: date2time netcdf-file yyyy-mm-dd [hh:mm]\n";    
+
+
+if (@ARGV < 2 or @ARGV > 3) {
+    die $usage;
+}
+
+$file = $ARGV[0];
+
+($year, $month, $day) = split /[-\/]/, $ARGV[1];
+
+($hour, $minute, $second) = split /\:/, $ARGV[2];
+
+$hour += 0;
+$minute += 0;
+$second += 0;
+
+# Check for numeric validity
+
+if ($year !~ /\d{4}/            or
+    $month  < 0 or $month  > 12 or 
+    $day    < 0 or $day    > 31 or
+    $hour   < 0 or $hour   > 24 or
+    $minute < 0 or $minute > 60 or
+    $second < 0 or $second > 60){
+    die "Invalid date specification: $year/$month/$day $hour:$minute:$second (should be YYYY/MM/DD [hh:mm:ss])\n";
+}
+
+
+$units = `ncdump -h $file | grep time:units | cut -f 2 -d \\\"`;
+unless ($units) {die "No units found in netcdf file $file.\n";}
+
+$calendar = `ncdump -h $file | grep time:calendar | cut -f 2 -d \\\"`;
+unless ($calendar) {die "No calendar found in netcdf file $file.\n";}
+
+chomp $units;
+chomp $calendar;
+
+$tempfile = ".date2time.$$";
+
+open(NCL, ">$tempfile");
+
+
+$nclscript = <<END;
+c = 0
+c\@calendar = \"$calendar\"
+date = cd_inv_calendar($year,$month,$day,$hour,$minute,$second,\"$units\",c)
+print(sprintf("%.4f",date))
+END
+
+    print NCL "$nclscript";
+
+close(NCL);
+
+$result = `ncl -n -Q $tempfile`;
+print "$result";
+
+`rm $tempfile`;
+
+# Copyright 2010-2012 Univ. Corp. for Atmos. Research
+# Author: Seth McGinnis, mcginnis@ucar.edu
