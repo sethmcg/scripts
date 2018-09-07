@@ -1,0 +1,101 @@
+#!/bin/tcsh
+
+## crops the time-axis of a NARCCAP datafile to the official coverage
+## period.
+
+## The offical coverage periods exclude spin-up at the beginning of
+## the run, cover an integer number of years, and start at the end of
+## November (so that you don't get a split in DJF winter at the
+## beginning and end of the period.  They are as follows:
+
+## Run		Start			End
+## NCEP		1979-12-01 00:00	2004-11-30 21:00
+## GCM current	1970-12-01 00:00	2000-11-30 21:00
+## GCM future	2040-12-01 00:00	2070-11-30 21:00
+## CCSM current	1970-12-01 00:00	1999-11-30 21:00
+
+## CCSM-current is different because the driving data ends one year
+## short.
+
+## Note that the extensive variables have their time coordinate at the
+## end of their 3-hour timestep, so the time_bounds for a cropped file
+## may not align quite the way you expect it to.
+
+
+if ($#argv < 1 || $#argv >3) then
+    echo "Usage: croptime infile [outfile [period]]"
+    echo "  outfile defaults to stdout"
+    echo "  period = ncep, current, or future"
+    echo "  period defaults to match on filename"
+    exit
+endif
+
+set infile = $1
+#echo infile : $infile
+
+if ($#argv > 1) then
+    set outfile = $2
+else
+#    set outfile = `dirname $infile`/`basename $infile | perl -pe 's/\.all\./\./'`
+    set outfile = ""
+endif
+
+
+#echo outfile : $outfile
+
+
+if ($#argv == 3) then
+    set period = $3
+else
+    set period = `basename $infile | perl -ne 'm/(TMSL_ccsm-current|TMSL_ccsm-future|MM5I_ccsm-current|MM5I_ccsm-future|ccsm-current|ncep|current|future)/;print "$1";'`
+endif
+
+#    echo period: $period
+
+## Note: Even with udunits support, NCO does not understand
+## non-gregorian calendars, so we have to use a script that uses the
+## NCL function ut_inv_calendar to map dates to time coordinates.
+
+set path = (~mcginnis/scripts $path)
+
+if ($period == "ncep") then
+    set start = `date2time $infile 1979-12-01 00:00`
+    set end   = `date2time $infile 2004-11-30 23:59`
+else if ($period == "current") then
+    set start = `date2time $infile 1970-12-01 00:00`	
+    set end   = `date2time $infile 2000-11-30 23:59`
+else if ($period == "future") then
+    set start = `date2time $infile 2040-12-01 00:00`
+    set end   = `date2time $infile 2070-11-30 23:59`
+else if ($period == "ccsm-current" || $period == "current-short") then
+    set start = `date2time $infile 1970-12-01 00:00`	
+    set end   = `date2time $infile 1999-11-30 23:59`
+else if ($period == "future-short") then
+    set start = `date2time $infile 2040-12-01 00:00`
+    set end   = `date2time $infile 2069-11-30 23:59`
+else if ($period == "TMSL_ccsm-current") then
+     set start = `date2time $infile 1980-12-01 00:00`
+     set end   = `date2time $infile 2000-11-30 23:59`
+else if ($period == "TMSL_ccsm-future-20") then
+    set start = `date2time $infile 2048-12-01 00:00`
+    set end   = `date2time $infile 2068-11-30 23:59`
+else if ($period == "TMSL_ccsm-future") then
+    set start = `date2time $infile 2041-12-01 00:00`
+    set end   = `date2time $infile 2069-11-30 23:59`
+ else if ($period == "MM5I_ccsm-current") then
+     set start = `date2time $infile 1970-12-01 00:00`
+     set end   = `date2time $infile 1998-11-30 23:59`
+else if ($period == "MM5I_ccsm-future") then
+    set start = `date2time $infile 2041-12-01 00:00`
+    set end   = `date2time $infile 2069-11-30 23:59`
+else 
+    echo "Unable to determine bounds of period '"$period"'.  Aborting."
+    exit
+endif
+
+echo ncks -a -d time,$start,$end $infile $outfile
+ncks -a -d time,$start,$end $infile $outfile
+
+
+# Copyright 2010-2012 Univ. Corp. for Atmos. Research
+# Author: Seth McGinnis, mcginnis@ucar.edu

@@ -1,0 +1,54 @@
+#!/bin/tcsh
+
+## This script takes a "trace" threshold and sets values below that
+## threshold to zero.  The threshold is recorded in an attribute named
+## "trace_threshold".
+
+## The conventional meteorological definition of "trace precipitation"
+## is less than 0.01 inches.  Because this program uses truncation
+## instead of rounding, it's best to use a slightly smaller threshold.
+## For LWE (thickness) units (mm or inches), a threshold of 0.001 is
+## recommended.  For MKS units (kg/m^2/s), a threshold of 1e-7 is
+## recommended.  (1e-7 kg/m^2/s = 0.00864 mm/day)
+
+if ($#argv < 1 || $#argv > 4) then
+    echo "Usage: ncfloortrace threshold infile [outfile [varname]]"
+    echo "Set netcdf variable values below threshold to zero."
+    echo ""
+    echo "  outfile defaults to infile"
+    echo "  varname defaults to first component of input filename,"
+    echo "    as delimited by . or _"
+    echo ""
+    echo "Recommended threshold values for precipitation: "
+    echo "  1e-7 for MKS units (kg/m^2/s)"
+    echo "  0.001 for LWE/thickness units (mm or inches)."
+    exit
+endif
+
+set theta = $1
+
+
+set infile = $2
+
+
+if ($#argv > 2) then
+   set outfile = $3
+else   
+   set outfile = $infile
+endif
+
+
+if ($#argv > 3) then
+   set var = $4
+else   
+   set var = `basename $infile | cut -f 1 -d _ | cut -f 1 -d .`
+endif
+
+
+ncap2 -s 'where('$var' < '$theta') '$var' = 0;' $infile $outfile
+
+ncatted -h -a trace_threshold,$var,o,d,$theta $outfile
+
+
+# Copyright 2010-2012 Univ. Corp. for Atmos. Research
+# Author: Seth McGinnis, mcginnis@ucar.edu

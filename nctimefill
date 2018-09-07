@@ -1,0 +1,74 @@
+#!/bin/tcsh -f
+
+# This weirdness is necessary because when nctimefill is invoked via
+# xargs, the argument list gets passed in as a single string, and it
+# needs to be split back up.
+
+set argv = ($*)
+
+if ($#argv < 6 || $#argv > 7) then
+    echo " usage: nctimefill first last N offset infile outfile [varname] \
+\
+ nctimefill inserts timesteps filled with _FillValue into the main\
+ variable of a netcdf file.  For example: nctimefill 100 102 5 in.nc\
+ out.nc will take timesteps 0 to 100 from in.nc, then add 5 timesteps\
+ filled with _FillValue, then everything from timestep 102 to the end\
+ of the file, and concatenate them all together in out.nc.\
+\
+ The inserted N timesteps are created by taking the N timesteps before\
+ start and changing them to _FillValue, then changing the time\
+ coordinate to start with start+offset.\
+\
+ If varname is not supplied, nctimefill assumes it's everything\
+ up to the first underscore in infile."
+    exit
+endif
+
+set first  = $1
+set last   = $2
+set n      = $3
+set offset = $4
+set in     = $5
+set out    = $6
+
+if ($#argv == 7) then
+    set var = $7
+else
+    set var = `basename $in | cut -f 1 -d _`
+endif
+
+echo nctimefill $first $last $n $offset $in $out $var
+
+set thead = $out.$$.tmp.head
+set ttail = $out.$$.tmp.tail
+set tmath = $out.$$.tmp.math
+set tfill = $out.$$.tmp.fill
+
+#set boundsvar = `ncdump -h $in | grep time:bounds | cut -f 2 -d \"`
+
+ncks -O -h -a -d time,0,$first $in $thead
+ncks -O -h -a -d time,$last, $in $ttail
+
+@ ff = ($first - $n) + 1
+
+ncks -O -h -a -d time,$ff,$first $in $tmath
+ncap2 -O -h -s "$var = $var * 0 + $var@_FillValue" $tmath $tfill
+ncap2 -O -h -s "time=time-time(0)+time($n-1)+$offset" $tfill $tfill.2
+
+## NCO handles bounds automagically now
+#if ($boundsvar != "") then
+#mv $tfill.2 $tfill
+#ncap2 -O -h -s "$boundsvar=$boundsvar-$boundsvar(0,)+$boundsvar($n-1,)+$offset" $tfill $tfill.2
+#endif
+
+
+ncrcat -O -h $thead $tfill.2 $ttail $out
+
+ncatted -h -a history,global,a,c,"\
+`date`: nctimefill $*" $out
+
+rm -f $thead $tfill $ttail $tmath $tfill.2
+
+
+# Copyright 2010-2012 Univ. Corp. for Atmos. Research
+# Author: Seth McGinnis, mcginnis@ucar.edu

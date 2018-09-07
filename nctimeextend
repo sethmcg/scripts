@@ -1,0 +1,96 @@
+#!/bin/tcsh
+
+# This weirdness is necessary because when the script is invoked via
+# xargs, the argument list gets passed in as a single string, and it
+# needs to be split back up.
+
+set argv = ($*)
+
+if ($#argv < 4 || $#argv > 5) then
+    echo " usage: nctimeextend N offset infile outfile [varname] \
+\
+ nctimeextend adds N timesteps filled with _FillValue to the main\
+ variable of a netcdf file.  If N is positive, they are appended at\
+ the end of the data, while if N is negative, the are prepended to\
+ the beginning.\
+\
+ The added timesteps are created by copying the last (first) N\
+ timesteps of infile and setting them to _FillValue, then adjusting\
+ the time coordinate by offset*N.  N.B.: Errors will occur if N is\
+ greater than the number of timesteps in the file, or if the time\
+ coordinate is not uniformly spaced.\
+\
+ If varname is not supplied, nctimeextend assumes it's everything\
+ up to the first underscore in infile."
+    exit
+endif
+
+echo nctimeextend $1 $2 $3 $4
+
+set n      = $1
+set offset = $2
+set in     = $3
+set out    = $4
+
+if ($#argv == 5) then
+    set var = $5
+else
+    set var = `basename $in | cut -f 1 -d _`
+endif
+
+set torig = $out.$$.tmp.orig
+set ttemp = $out.$$.tmp.temp
+set tfill = $out.$$.tmp.fill
+
+set boundsvar = `ncdump -h $in | grep time:bounds | cut -f 2 -d \"`
+
+cp $in $out
+
+
+if ($n < 0 ) then
+    @ m = - $n
+    set first = 0
+    @ last = $m - 1
+
+    cp $out $torig
+    
+    ncks -O -h -a -d time,$first,$last $out $tfill
+    ncap2 -O -h -s "$var = $var * 0 + $var@_FillValue" $tfill $ttemp    
+    ncap2 -O -h -s "time=time-$offset*$m" $ttemp $tfill
+
+    if ($boundsvar != "") then
+      mv $tfill $ttemp
+      ncap2 -O -h -s "$boundsvar=$boundsvar-$offset*$m" $ttemp $tfill
+    endif
+
+    ncrcat -O -h $tfill $torig $out
+endif
+
+if ($n > 0 ) then
+    cp $out $torig
+
+    set nt = `ncdump -h $torig | perl -ne 'if (m|time = UNLIMITED ; // \((\d+) currently\)|) {print ($1-1); exit;}'`
+    @ first = $nt - $n
+    @ last  = $nt - 1
+
+    ncks -O -h -a -d time,$first,$last $out $tfill
+    ncap2 -O -h -s "$var = $var * 0 + $var@_FillValue" $tfill $ttemp    
+    ncap2 -O -h -s "time=time+$offset*($n+1)" $ttemp $tfill
+
+    if ($boundsvar != "") then
+      mv $tfill $ttemp
+      ncap2 -O -h -s "$boundsvar=$boundsvar+$offset*($n+1)" $ttemp $tfill
+    endif
+
+    ncrcat -O -h $torig $tfill $out
+endif
+
+
+rm -f $torig $ttemp $tfill
+
+ncatted -h -a history,global,a,c,"\
+`date`: nctimeextend $*" $out
+
+
+# Copyright 2010-2012 Univ. Corp. for Atmos. Research
+# Author: Seth McGinnis, mcginnis@ucar.edu
