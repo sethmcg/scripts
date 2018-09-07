@@ -1,0 +1,60 @@
+#!/bin/tcsh
+
+## This script converts netcdf files with precipitation in mass flux
+## units (kg m-2 s-1) to LWE thickness units (mm/day).  Water has a
+## density of 1 gram per cubic centimeter and one kilogram of water
+## spread out over a 1-meter square forms a layer one millimeter deep,
+## so to perform this conversion, we just multiply by 60*60*24 seconds
+## in a day.  Only the first precip variable found is converted.
+
+## The variable name is determined by grepping the input file header
+## for a variable with the appropriate units for conversion.
+
+## Replacment standard name is constructed by prepending "lwe_" and
+## changing "flux" to "rate" on the existing filename.  This should be
+## correct in most cases.
+
+## If no output filename is specified, a default filename is
+## constructed by substitution on the input filename as follows:
+
+##    s/pr/prec/
+
+## The resulting output file is placed in the same directory
+## as the input file.
+
+set prog = `basename $0`
+
+if ($#argv < 1 || $#argv > 2) then
+    echo "Usage: $prog infile [outfile]"
+    exit 1
+endif
+
+set infile = $1
+
+if ($#argv == 2) then
+    set outfile = $2
+else
+    set outfile = `dirname $infile`/`basename $infile|sed -s 's/pr/prec/'`
+endif
+
+
+set v = `ncdump -h $infile | grep units | grep '= \"kg m-2 s-1\"' \
+         | head -1 | cut -f 1 -d : | awk '{print $1}'`
+
+if ($v == "") then
+    echo ${prog}: no precip variable found with units = \"kg m-2 s-1\"
+    exit 2
+endif
+
+set sname = lwe_`ncdump -h $infile | grep "$v\:standard_name" \
+                 | cut -f 2 -d \" | sed -s s/flux/rate/`
+
+ncap2 -O -s "$v=$v"'*(60*60*24)' \
+  -s $v'@standard_name="'$sname'"' \
+  -s $v'@units="mm/day"' \
+  $infile $outfile
+
+ncrename -v $v,prec $outfile
+
+# Copyright 2010-2012 Univ. Corp. for Atmos. Research
+# Author: Seth McGinnis, mcginnis@ucar.edu

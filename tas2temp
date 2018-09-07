@@ -1,0 +1,59 @@
+#!/bin/tcsh
+
+## This script converts netcdf files with temperatures in Kelvin (K)
+## to Celsius (degC) by subtracting 273.15.  Only the first
+## temperature variable found is converted.
+
+## The variable name is determined by grepping the input file header
+## for a variable with the appropriate units for conversion.
+
+## If no output filename is specified, a default filename is
+## constructed by substitution on the input filename as follows:
+
+##    s/tasmin/tmin/
+##    s/tasmax/tmax/
+##    s/tas/temp/
+
+## The resulting output file is placed in the same directory
+## as the input file.
+
+set prog = `basename $0`
+
+
+if ($#argv < 1 || $#argv > 2) then
+    echo "Usage: $prog infile [outfile]"
+    exit 1
+endif
+
+set infile = $1
+
+if ($#argv == 2) then
+    set outfile = $2
+else    
+    set outfile = `dirname $infile`/`basename $infile | \
+        sed -s 's/tasmin/tmin/;s/tasmax/tmax/;s/tas/temp/'`
+endif
+
+
+set v = `ncdump -h $infile | grep units | grep '= \"K\"' \
+         | head -1 | cut -f 1 -d : | awk '{print $1}'`
+
+if ($v == "") then
+   echo ${prog}: no temperature variable found with units = \"K\"
+   exit 2
+endif
+
+ncap2 -O -s "$v=$v-float(273.15)" \
+   -s $v'@units="degC"' \
+   $infile $outfile
+
+if ($v == "tasmax") then
+    ncrename -v $v,tmax $outfile
+else if ($v == "tasmin") then
+    ncrename -v $v,tmin $outfile
+else 
+    ncrename -v $v,temp $outfile
+endif
+
+# Copyright 2010-2012 Univ. Corp. for Atmos. Research
+# Author: Seth McGinnis, mcginnis@ucar.edu
