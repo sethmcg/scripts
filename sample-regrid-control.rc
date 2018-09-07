@@ -1,0 +1,13 @@
+source("tpsregrid.r")         
+tpsRegridNetCDF(              
+        varname  = "temp",    
+        verbose  = TRUE,      
+        diagnostics = TRUE,   
+        infile   = "data/temp_CRCM_ncep.nc",         
+        outfile  = "result/temp_CRCM_ncep.tps.nc",   
+        gridfile = "grid_UDEL.nc",  
+        )                                    
+
+# example run-control file for tpsregrid.r
+
+# add/delete/edit parameters above, then run using "R -f controlfile.rc"
