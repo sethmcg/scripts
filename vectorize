@@ -3,25 +3,183 @@
 ## given a file of commands (one command per line), runs them in
 ## parallel on cheyenne using commandfile MPMD approach
 
-set tmp = `mktemp -d`
-set cmd = $tmp/cmdfile
-set out = $tmp/out
-set err = $tmp/err
-set pbs = $tmp/pbs
-set job = `basename $1`
+set help = no
+set submit = yes
+set QUEUE = premium
+set WALLTIME = 00:10:00
 
-## commands need to be wrapped in tcsh shell invocation
+## Argument parsing from util-linux-ng getopt-parse.tcsh example.
 
-sed "s|\(.*\)|tcsh -c '\1 >>\& $tmp/log'|g" $1 > $cmd
+# Use a temp variable b/c eval nukes getopt return value.  ':q' copies
+# argv list w/ no substitutions
 
-set nt = `cat $cmd | wc -l`
-set nn =  `perl -w -e "use POSIX; print ceil($nt/36)"`
+set temp=(`getopt -a -n vectorize -s tcsh -o d:hj:np:q:w: --long dir:,help,nosub,project:,queue:,walltime: -- $argv:q`)
+if ($? != 0) then
+  echo "Terminating..." >/dev/stderr
+  exit 1
+endif
 
-sed -e "s|NTASK|$nt|; s|NNODE|$nn|; s|JOBNAME|$job|; s|OUTFILE|$out|; s|ERRFILE|$err|; s|CMDFILE|$cmd|" ~/template.pbs > $pbs
+# Quote the parens b/c the result is a list, and they need to be
+# evaluated when eval is called.  'q' prevents substitutions.
 
-qsub < $pbs &
+eval set argv=\($temp:q\)
+
+while (1)
+  switch($1:q)
+  case -d:
+  case --dir:
+    set dir = $2:q ; shift ; shift
+    breaksw;
+  case -h:
+    set help = yes ; shift
+    breaksw
+  case -j:
+  case --jobname:
+    set JOBNAME = $2:q ; shift ; shift
+    breaksw;
+  case -n:
+  case --nosub:
+    set submit = no ; shift
+    breaksw 
+  case -p:
+  case --project:
+    set PROJECT = $2:q ; shift ; shift
+    breaksw;
+  case -q:
+  case --queue:
+    set QUEUE = $2:q ; shift ; shift
+    breaksw;
+  case -w:
+  case --walltime:
+    set WALLTIME = $2:q ; shift ; shift
+    breaksw;
+  case --:
+    shift
+    break
+  default:
+    echo "vectorize: Internal error!" ; exit 1
+    endsw
+end
 
 
+if(! $?PROJECT) then
+  set PROJECT = none
+  echo "vectorize: ERROR: project code not defined"
+endif
 
-# Copyright 2017 Univ. Corp. for Atmos. Research
+if( $#argv < 1) then
+  echo "vectorize: ERROR: no commandfile"  
+endif
+
+if( $#argv > 1) then
+  echo "vectorize: ERROR: too many arguments"
+endif
+
+if($help == yes || $PROJECT == none || $#argv != 1) then
+  cat <<EOUSAGE
+Usage: vectorize [-d dir] [-h] [-j jobname] [-n] [-p project] [-q queue] [-w walltime] cmdfile
+  -d, --dir:       directory for output; defaults to `mktemp -d`
+  -h, --help:      prints this help message
+  -j, --jobname:   qsub jobname; defaults to `basename cmdfile .txt`
+  -n, --nosub:     don't submit job, just set everything up
+  -p, --project:   project code; defaults to PROJECT envariable (if set)
+  -q, --queue:     queue to submit to; defaults to premium
+  -w, --walltime:  wallclock limit for job; defaults to 00:10:00
+  cmdfile: a file with one command per line, to be run in parallel
+
+  vectorize is a utility for running many independent single-threaded
+  commands in parallel on cheyenne using MPDP parallelism.
+EOUSAGE
+exit 1
+endif
+
+if ( $?dir ) then
+  mkdir -p $dir
+else
+  set dir = `mktemp -d`
+endif
+
+if (! $?JOBNAME ) then
+  set JOBNAME = `basename $1 .txt`
+endif
+
+
+set CMDFILE = $dir/cmd
+set OUTFILE = $dir/out
+set ERRFILE = $dir/err
+set pbsfile = $dir/pbs
+rm -f $dir/log
+
+## commands need to be wrapped in a shell invocation
+
+#sed "s|\(.*\)|tcsh -c '\1 >>\& $dir/log'|g" $1 > $CMDFILE
+#sed "s|\(.*\)|bash -c '\1 2>>$dir/errerr 1>>$dir/outout'|g" $1 > $CMDFILE
+sed "s|\(.*\)|bash -c '\1'|g" $1 > $CMDFILE
+
+set NTASK = `cat $CMDFILE | wc -l`
+set NNODE = `perl -w -e "use POSIX; print ceil($NTASK/36)"`
+set NCPUS = `perl -w -e "use POSIX; print ceil($NTASK/$NNODE)"`
+
+cat <<EOPBS > $pbsfile
+#!/bin/tcsh
+
+##### parameters for PBS scheduling via qsub
+##### submit jobs as "qsub scriptname"
+
+# account code to charge to
+#PBS -A $PROJECT
+
+# which queue to use
+#PBS -q $QUEUE
+
+# job name
+#PBS -N $JOBNAME
+
+# stdout file
+#PBS -o $OUTFILE
+
+# stderr file
+#PBS -e $ERRFILE
+
+# runtime limit
+#PBS -l walltime=$WALLTIME
+
+# CPU resource request
+# ntask = number of lines in file [$NTASK]
+# nnode = ceiling(ntask / 36)     [$NNODE]
+# ncpus = ceiling(ntask / nnode)  [$NCPUS]
+# select: number of nodes
+# ncpus: number of cpus per node to use
+# mpiprocs: matches ncpus (1 process per CPU)
+# ompthreads: always set to 1 (1 thread per process)
+#PBS -l select=${NNODE}:ncpus=${NCPUS}:mpiprocs=${NCPUS}:ompthreads=1
+
+#source /glade/u/apps/opt/lmod/4.2.1/init/tcsh 
+
+module load mpt
+module load netcdf
+module load R
+module load nco
+module load cdo
+module load ncl
+
+setenv MPI_SHEPHERD true
+
+mpiexec_mpt -n $NTASK launch_cf.sh $CMDFILE
+
+EOPBS
+
+
+if($submit == yes) then
+  qsub $pbsfile
+
+  ## PBS gets hosed if it gets more than about 1 job per second.
+  ## Sleep 1 second so that we don't make things sad when looping over
+  ## many commandfiles.
+
+  sleep 1
+endif
+
+# Copyright 2018 Univ. Corp. for Atmos. Research
 # Author: Seth McGinnis, mcginnis@ucar.edu
+
