@@ -30,6 +30,10 @@ history = "Created " + systemfunc("date") + " by "+systemfunc("whoami")+"@"+syst
 
 fout@history = history
 
+;; update unique tracking_id
+fout@tracking_id = systemfunc("uuidgen")
+
+
 ; copy variables
 
 var_names = getfilevarnames (finh) ;

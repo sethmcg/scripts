@@ -59,6 +59,10 @@ history = history + " using NCL script calc_hidx.ncl from parent files listed ab
 
 fout@history = history
 
+;; update unique tracking_id
+fout@tracking_id = systemfunc("uuidgen")
+
+
 ; copy variables
 
 var_names = getfilevarnames (fint) ;

@@ -456,6 +456,9 @@ hstring = hstring+" method="+method
 hstring = hstring+" outtime="+outtime
 fout@history = hstring+inttochar(10)+fout@history
 
+;; update unique tracking_id
+fout@tracking_id = systemfunc("uuidgen")
+
 
 ;; provenance checking - to be sure that your data is coming from where you think it should.
 

@@ -47,5 +47,10 @@ hstring = systemfunc("date")
 hstring = hstring + ": ncl patch-regrid.ncl infile="+infile+" wgtfile="+wgtfile+" outfile="+outfile+" varname="+varname
 fout@history = hstring+inttochar(10)+fout@history
 
+
+;; update unique tracking_id
+fout@tracking_id = systemfunc("uuidgen")
+
+
 ;; Copyright 2013 Univ. Corp. for Atmos. Research
 ;; Author: Seth McGinnis, mcginnis@ucar.edu 

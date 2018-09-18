@@ -56,5 +56,7 @@ ncap2 -O -s "$v=$v"'*(60*60*24)' \
 
 ncrename -v $v,prec $outfile
 
-# Copyright 2010-2012 Univ. Corp. for Atmos. Research
+ncatted -h -a tracking_id,global,o,c,`uuidgen` $outfile
+
+# Copyright 2010-2018 Univ. Corp. for Atmos. Research
 # Author: Seth McGinnis, mcginnis@ucar.edu

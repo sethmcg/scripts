@@ -31,6 +31,10 @@ end do
 
 ;; No need to add history entry - varname@lonFlip attribute records operation
 
+;; But the data does (potentially) get rearranged, so:
+;; update unique tracking_id
+fout@tracking_id = systemfunc("uuidgen")
+
 ; copy variables
 
 var_names = getfilevarnames (fin) ;

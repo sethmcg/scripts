@@ -63,6 +63,9 @@ history = history + " using NCL script calc_humid.ncl from parent files listed a
 fouth@history = history
 foutd@history = history
 
+;; update unique tracking_ids
+fouth@tracking_id = systemfunc("uuidgen")
+foutd@tracking_id = systemfunc("uuidgen")
 
 
 ; copy variables

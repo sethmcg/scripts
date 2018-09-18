@@ -37,6 +37,9 @@ end do
 
 fout@history = systemfunc("date")+": ncl datafile="+datafile+" gridfile="+gridfile+" outfile="+outfile+" coarsen.ncl"+inttochar(10)+fout@history
 
+;; update unique tracking_id
+fout@tracking_id = systemfunc("uuidgen")
+
 
 ; copy variables
 
