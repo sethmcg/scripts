@@ -3,9 +3,11 @@
 ## given a file of commands (one command per line), runs them in
 ## parallel on cheyenne using commandfile MPMD approach
 
+set defaultq = yes
 set help = no
 set submit = yes
 set QUEUE = premium
+set serial = no
 set WALLTIME = 00:10:00
 
 ## Argument parsing from util-linux-ng getopt-parse.tcsh example.
@@ -13,7 +15,7 @@ set WALLTIME = 00:10:00
 # Use a temp variable b/c eval nukes getopt return value.  ':q' copies
 # argv list w/ no substitutions
 
-set temp=(`getopt -a -n vectorize -s tcsh -o d:hj:np:q:w: --long dir:,help,nosub,project:,queue:,walltime: -- $argv:q`)
+set temp=(`getopt -a -n vectorize -s tcsh -o d:hj:np:q:sw: --long dir:,help,nosub,project:,queue:,serial,walltime: -- $argv:q`)
 if ($? != 0) then
   echo "Terminating..." >/dev/stderr
   exit 1
@@ -47,8 +49,13 @@ while (1)
     breaksw;
   case -q:
   case --queue:
+    set defaultq = no
     set QUEUE = $2:q ; shift ; shift
     breaksw;
+  case -s:
+  case --serial:
+    set serial = yes ; shift
+    breaksw 
   case -w:
   case --walltime:
     set WALLTIME = $2:q ; shift ; shift
@@ -78,12 +85,13 @@ endif
 if($help == yes || $PROJECT == none || $#argv != 1) then
   cat <<EOUSAGE
 Usage: vectorize [-d dir] [-h] [-j jobname] [-n] [-p project] [-q queue] [-w walltime] cmdfile
-  -d, --dir:       directory for output; defaults to `mktemp -d`
+  -d, --dir:       directory for output; defaults to \`mktemp -d\`
   -h, --help:      prints this help message
   -j, --jobname:   qsub jobname; defaults to `basename cmdfile .txt`
   -n, --nosub:     don't submit job, just set everything up
   -p, --project:   project code; defaults to PROJECT envariable (if set)
   -q, --queue:     queue to submit to; defaults to premium
+  -s, --serial:    runs in serial on share queue instead (ignores -q)
   -w, --walltime:  wallclock limit for job; defaults to 00:10:00
   cmdfile: a file with one command per line, to be run in parallel
 
@@ -103,6 +111,13 @@ if (! $?JOBNAME ) then
   set JOBNAME = `basename $1 .txt`
 endif
 
+if ( $serial == yes ) then
+  if($defaultq == no) then
+  echo "vectorize: WARNING: running in serial on share queue; ignoring user-specified queue ($QUEUE)"
+  endif
+  set QUEUE = share
+endif
+
 
 set CMDFILE = $dir/cmd
 set OUTFILE = $dir/out
@@ -110,17 +125,18 @@ set ERRFILE = $dir/err
 set pbsfile = $dir/pbs
 rm -f $dir/log
 
-## commands need to be wrapped in a shell invocation
+## commands need to be wrapped in a shell invocation for MPMD
 
-#sed "s|\(.*\)|tcsh -c '\1 >>\& $dir/log'|g" $1 > $CMDFILE
-#sed "s|\(.*\)|bash -c '\1 2>>$dir/errerr 1>>$dir/outout'|g" $1 > $CMDFILE
-sed "s|\(.*\)|bash -c '\1'|g" $1 > $CMDFILE
+if ($serial == yes) then
+  cp $1 $CMDFILE
+else 
+  #sed "s|\(.*\)|tcsh -c '\1 >>\& $dir/log'|g" $1 > $CMDFILE
+  #sed "s|\(.*\)|bash -c '\1 2>>$dir/errerr 1>>$dir/outout'|g" $1 > $CMDFILE
+  sed "s|\(.*\)|bash -c '\1'|g" $1 > $CMDFILE
+endif
 
-set NTASK = `cat $CMDFILE | wc -l`
-set NNODE = `perl -w -e "use POSIX; print ceil($NTASK/36)"`
-set NCPUS = `perl -w -e "use POSIX; print ceil($NTASK/$NNODE)"`
 
-cat <<EOPBS > $pbsfile
+cat <<EOPBSHEAD > $pbsfile
 #!/bin/tcsh
 
 ##### parameters for PBS scheduling via qsub
@@ -144,6 +160,22 @@ cat <<EOPBS > $pbsfile
 # runtime limit
 #PBS -l walltime=$WALLTIME
 
+EOPBSHEAD
+
+if ($serial == yes) then
+
+  cat <<EOSERIAL >> $pbsfile
+# CPU resource request for serial job in shared queue
+#PBS -l select=1:ncpus=1
+EOSERIAL
+
+else
+
+  set NTASK = `cat $CMDFILE | wc -l`
+  set NNODE = `perl -w -e "use POSIX; print ceil($NTASK/36)"`
+  set NCPUS = `perl -w -e "use POSIX; print ceil($NTASK/$NNODE)"`
+
+  cat <<EOPARALLEL >> $pbsfile
 # CPU resource request
 # ntask = number of lines in file [$NTASK]
 # nnode = ceiling(ntask / 36)     [$NNODE]
@@ -153,6 +185,11 @@ cat <<EOPBS > $pbsfile
 # mpiprocs: matches ncpus (1 process per CPU)
 # ompthreads: always set to 1 (1 thread per process)
 #PBS -l select=${NNODE}:ncpus=${NCPUS}:mpiprocs=${NCPUS}:ompthreads=1
+EOPARALLEL
+
+endif
+
+  cat <<EOPBSMID >> $pbsfile
 
 #source /glade/u/apps/opt/lmod/4.2.1/init/tcsh 
 
@@ -163,11 +200,18 @@ module load nco
 module load cdo
 module load ncl
 
+EOPBSMID
+
+if ($serial == yes) then
+  cat <<EOSTAIL >> $pbsfile
+bash $CMDFILE
+EOSTAIL
+else
+  cat <<EOPTAIL >> $pbsfile
 setenv MPI_SHEPHERD true
-
 mpiexec_mpt -n $NTASK launch_cf.sh $CMDFILE
-
-EOPBS
+EOPTAIL
+endif
 
 
 if($submit == yes) then
