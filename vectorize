@@ -4,9 +4,11 @@
 ## parallel on cheyenne using commandfile MPMD approach
 
 set defaultq = yes
+set geyser = no
 set help = no
 set submit = yes
 set QUEUE = premium
+set MEMORY = 2G
 set serial = no
 set WALLTIME = 00:10:00
 
@@ -15,7 +17,7 @@ set WALLTIME = 00:10:00
 # Use a temp variable b/c eval nukes getopt return value.  ':q' copies
 # argv list w/ no substitutions
 
-set temp=(`getopt -a -n vectorize -s tcsh -o d:hj:np:q:sw: --long dir:,help,nosub,project:,queue:,serial,walltime: -- $argv:q`)
+set temp=(`getopt -a -n vectorize -s tcsh -o d:ghj:m:np:q:sw: --long dir:,geyser,help,nosub,memory:,project:,queue:,serial,walltime: -- $argv:q`)
 if ($? != 0) then
   echo "Terminating..." >/dev/stderr
   exit 1
@@ -32,12 +34,20 @@ while (1)
   case --dir:
     set dir = $2:q ; shift ; shift
     breaksw;
+  case -g:
+  case --geyser:
+    set geyser = yes ; shift
+    breaksw
   case -h:
     set help = yes ; shift
     breaksw
   case -j:
   case --jobname:
     set JOBNAME = $2:q ; shift ; shift
+    breaksw;
+  case -m:
+  case --memory:
+    set MEMORY = $2:q ; shift ; shift
     breaksw;
   case -n:
   case --nosub:
@@ -86,8 +96,10 @@ if($help == yes || $PROJECT == none || $#argv != 1) then
   cat <<EOUSAGE
 Usage: vectorize [-d dir] [-h] [-j jobname] [-n] [-p project] [-q queue] [-w walltime] cmdfile
   -d, --dir:       directory for output; defaults to \`mktemp -d\`
+  -g, --geyser:    runs in serial on geyser instead (ignores -q, -s)
   -h, --help:      prints this help message
   -j, --jobname:   qsub jobname; defaults to `basename cmdfile .txt`
+  -m, --memory:    amount of memory needed (only when running on geyser)
   -n, --nosub:     don't submit job, just set everything up
   -p, --project:   project code; defaults to PROJECT envariable (if set)
   -q, --queue:     queue to submit to; defaults to premium
@@ -101,40 +113,110 @@ EOUSAGE
 exit 1
 endif
 
+## bail out early if no command file
+
+if (-z $1) then
+  echo "vectorize: ERROR: empty command file; exiting"
+  exit 1
+endif
+if (! -e $1) then
+  echo "vectorize: ERROR: no such command file: '$1'; exiting"
+  exit 1
+endif
+
+
+## test for mutually exclusive flags
+
+if ( $geyser == yes ) then
+  if( $defaultq == no ) then
+    echo "vectorize: WARNING: running in serial on geyser; ignoring user-specified queue ($QUEUE)"
+  endif
+  if ( $serial == yes ) then
+    echo "vectorize: WARNING: running in serial on geyser; ignoring -s flag"
+  endif
+else
+  if ( $MEMORY != 1.87G ) then
+    echo "vectorize: WARNING: not running on geyser; ignoring user-specified memory ($MEMORY)"
+  endif
+endif
+
+if ( $serial == yes ) then
+  if( $defaultq == no ) then
+    echo "vectorize: WARNING: running in serial on share queue; ignoring user-specified queue ($QUEUE)"
+  endif
+  set QUEUE = share
+endif
+
+
+## create output dir
+
 if ( $?dir ) then
   mkdir -p $dir
 else
   set dir = `mktemp -d`
 endif
 
+
+## setup
+
 if (! $?JOBNAME ) then
   set JOBNAME = `basename $1 .txt`
 endif
 
-if ( $serial == yes ) then
-  if($defaultq == no) then
-  echo "vectorize: WARNING: running in serial on share queue; ignoring user-specified queue ($QUEUE)"
-  endif
-  set QUEUE = share
-endif
-
-
 set CMDFILE = $dir/cmd
 set OUTFILE = $dir/out
 set ERRFILE = $dir/err
-set pbsfile = $dir/pbs
-rm -f $dir/log
+if( $geyser == yes ) then
+  set slurmfile = $dir/slurm
+else
+  set pbsfile = $dir/pbs
+endif
+
 
 ## commands need to be wrapped in a shell invocation for MPMD
 
-if ($serial == yes) then
+if ($serial == yes || $geyser == yes) then
   cp $1 $CMDFILE
 else 
-  #sed "s|\(.*\)|tcsh -c '\1 >>\& $dir/log'|g" $1 > $CMDFILE
-  #sed "s|\(.*\)|bash -c '\1 2>>$dir/errerr 1>>$dir/outout'|g" $1 > $CMDFILE
   sed "s|\(.*\)|bash -c '\1'|g" $1 > $CMDFILE
 endif
 
+
+if ( $geyser == yes ) then
+
+## create slurm batch script
+
+cat <<EOSLURM > $slurmfile
+#!/bin/tcsh
+#SBATCH -J $JOBNAME
+#SBATCH -n 1
+#SBATCH --ntasks-per-node=1
+#SBATCH --mem=$MEMORY
+#SBATCH -t $WALLTIME
+#SBATCH -A $PROJECT
+#SBATCH -p dav
+#SBATCH -e $ERRFILE
+#SBATCH -o $OUTFILE
+
+module load netcdf
+module load R
+module load nco
+module load cdo
+module load ncl
+
+bash $CMDFILE
+
+EOSLURM
+
+## submit job (or not)
+
+if($submit == yes) then
+  sbatch $slurmfile
+endif
+
+else
+
+## create PBS batch script
 
 cat <<EOPBSHEAD > $pbsfile
 #!/bin/tcsh
@@ -214,6 +296,8 @@ EOPTAIL
 endif
 
 
+## submit job (or not)
+
 if($submit == yes) then
   qsub $pbsfile
 
@@ -223,6 +307,10 @@ if($submit == yes) then
 
   sleep 1
 endif
+
+endif
+
+exit 0
 
 # Copyright 2018 Univ. Corp. for Atmos. Research
 # Author: Seth McGinnis, mcginnis@ucar.edu
