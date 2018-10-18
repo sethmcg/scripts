@@ -135,7 +135,7 @@ if ( $geyser == yes ) then
     echo "vectorize: WARNING: running in serial on geyser; ignoring -s flag"
   endif
 else
-  if ( $MEMORY != 1.87G ) then
+  if ( $MEMORY != 2G ) then
     echo "vectorize: WARNING: not running on geyser; ignoring user-specified memory ($MEMORY)"
   endif
 endif
