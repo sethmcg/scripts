@@ -17,8 +17,9 @@ end
 ;; infile (mandatory): name of input file
 ;; step:  timestep length (defaults to 1)
 ;; delta: tolerance for deviation from step size (defaults to 0)
+;; terse: silent if ok, output filename only if gap found (defaults to False)
 
-;; ncl -x varname=\"prtot\" infile=\"table6/prtot_CRCM_climatology.nc\" step=1 delta=1.0/1440 continuity.ncl 
+;; ncl -Q -n infile=\"table6/prtot_CRCM_climatology.nc\" step=1 delta=1.0/1440 cont.ncl 
 
 
  tab = "	"
@@ -31,6 +32,10 @@ if (.not. isvar("delta")) then
   delta = 0.0
 end if
 
+if (.not. isvar("terse")) then
+  terse = False
+end if
+
 
 ;; open file
 fin = addfile(infile, "r")
@@ -38,20 +43,26 @@ fin = addfile(infile, "r")
 time = fin->time
 nt = dimsizes(time)
 
-print(""+infile)
+if(.not. terse) then
+  print(""+infile)
+end if
  
- do i=0,nt-2
+do i=0,nt-2
  
- dt = time(i+1)-time(i)
+  dt = time(i+1)-time(i)
  
- if (abs(dt - step) .gt. delta) then
+  if (abs(dt - step) .gt. delta) then
 
-   print("----")
-   print (""+i+tab+time(i)+tab+ut_date(time(i)))
-   print (""+(i+1)+tab+time(i+1)+tab+ut_date(time(i+1)))
-   print (tab+dt)
+    if(terse) then
+      print(""+infile)
+      exit
+    end if
+    print("----")
+    print (""+i+tab+time(i)+tab+ut_date(time(i)))
+    print (""+(i+1)+tab+time(i+1)+tab+ut_date(time(i+1)))
+    print (tab+dt)
  
- end if
+  end if
  
 end do
 
