@@ -7,7 +7,11 @@ load "$NCARG_ROOT/lib/ncarg/nclscripts/esmf/ESMF_regridding.ncl"
 ;varname = "swe"
 
 ;; Specify arguments to script via command-line:
-;; ncl patch-regrid.ncl infile=\"$in\" wgtfile=\"$wgt\" outfile=\"$out\" varname=\"$var\"
+;; ncl patch-regrid.ncl infile=\"$in\" wgtfile=\"$wgt\" outfile=\"$out\" varname=\"$var\" rezero=False
+
+if (.not. isvar("rezero")) then
+  rezero = False
+end if
 
 system("rm "+outfile)
 fin = addfile(infile, "r")
@@ -24,6 +28,10 @@ opt@FixMapMethodForPatch = True  ;; else metadata sez bilinear instead of patch
 odata = ESMF_regrid_with_weights (data, wgtfile, opt)
 
 delete(odata@grid_mapping)
+
+if(rezero) then 
+  odata = where(odata.lt.0, 0, odata)
+end if
 
 fout->$varname$ = odata
 
