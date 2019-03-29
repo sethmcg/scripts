@@ -1,6 +1,6 @@
 ;;; NCL script for printing dates of first and last timestep in file
 
-load "$NCARG_ROOT/lib/ncarg/nclscripts/contrib/ut_string.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/contrib/cd_string.ncl"
 
 ;; Pass filename in via command-line.  Example:
 
@@ -18,8 +18,8 @@ nt = dimsizes(time)
 
 infile = systemfunc("basename "+infile)
 
-first = ut_string(time(0), format)
-last = ut_string(time(nt-1), format)
+first = cd_string(time(0), format)
+last = cd_string(time(nt-1), format)
 
 print(""+infile+"	"+first+"	"+last)
 

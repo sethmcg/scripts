@@ -275,6 +275,9 @@ endif
 
 #source /glade/u/apps/opt/lmod/4.2.1/init/tcsh 
 
+setenv TMPDIR /glade/scratch/$USER/vectemp
+mkdir -p $TMPDIR
+
 module load mpt
 module load netcdf
 module load R
