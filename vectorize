@@ -4,6 +4,7 @@
 ## parallel on cheyenne using commandfile MPMD approach
 
 set defaultq = yes
+set fold = 1
 set geyser = no
 set help = no
 set submit = yes
@@ -17,7 +18,7 @@ set WALLTIME = 00:10:00
 # Use a temp variable b/c eval nukes getopt return value.  ':q' copies
 # argv list w/ no substitutions
 
-set temp=(`getopt -a -n vectorize -s tcsh -o d:ghj:m:np:q:sw: --long dir:,geyser,help,nosub,memory:,project:,queue:,serial,walltime: -- $argv:q`)
+set temp=(`getopt -a -n vectorize -s tcsh -o d:f:ghj:m:np:q:sw: --long dir:,fold:,geyser,help,nosub,memory:,project:,queue:,serial,walltime: -- $argv:q`)
 if ($? != 0) then
   echo "Terminating..." >/dev/stderr
   exit 1
@@ -33,6 +34,10 @@ while (1)
   case -d:
   case --dir:
     set dir = $2:q ; shift ; shift
+    breaksw;
+  case -f:
+  case --fold:
+    set fold = $2:q ; shift ; shift
     breaksw;
   case -g:
   case --geyser:
@@ -96,6 +101,7 @@ if($help == yes || $PROJECT == none || $#argv != 1) then
   cat <<EOUSAGE
 Usage: vectorize [-d dir] [-h] [-j jobname] [-n] [-p project] [-q queue] [-w walltime] cmdfile
   -d, --dir:       directory for output; defaults to \`mktemp -d\`
+  -f, --fold:      number of commands to fold together (run in serial per core)
   -g, --geyser:    runs in serial on geyser instead (ignores -q, -s)
   -h, --help:      prints this help message
   -j, --jobname:   qsub jobname; defaults to `basename cmdfile .txt`
@@ -144,6 +150,9 @@ if ( $serial == yes ) then
   if( $defaultq == no ) then
     echo "vectorize: WARNING: running in serial on share queue; ignoring user-specified queue ($QUEUE)"
   endif
+  if( $fold > 1 ) then
+    echo "vectorize: WARNING: running in serial on share queue; ignoring user-specific folding ($fold)"
+  endif
   set QUEUE = share
 endif
 
@@ -178,7 +187,14 @@ endif
 if ($serial == yes || $geyser == yes) then
   cp $1 $CMDFILE
 else 
-  sed "s|\(.*\)|bash -c '\1'|g" $1 > $CMDFILE
+  if($fold > 1) then
+    ## "paste - - -" pastes 3 successive lines into one.
+    ## use repeat to get a string of N dashes, then eval to execute
+    eval "cat $1 | paste -d \; "`repeat $fold echo -n "- "`| \
+    sed "s|\(.*\)|bash -c '\1'|g" > $CMDFILE
+  else
+    sed "s|\(.*\)|bash -c '\1'|g" $1 > $CMDFILE
+  endif
 endif
 
 
