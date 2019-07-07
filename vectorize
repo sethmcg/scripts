@@ -190,8 +190,13 @@ else
   if($fold > 1) then
     ## "paste - - -" pastes 3 successive lines into one.
     ## use repeat to get a string of N dashes, then eval to execute
+
+    ## if ncommands is not an integer multiple of nfolds, need to
+    ## stick : (bash no-op) between trailing ;;s at end of folded
+    ## cmdfile to prevent syntax errors (twice to get all of them)
+
     eval "cat $1 | paste -d \; "`repeat $fold echo -n "- "`| \
-    sed "s|\(.*\)|bash -c '\1'|g" > $CMDFILE
+    sed "s|\(.*\)|bash -c '\1'|g" | sed 's/;;/;:;/g' | sed 's/;;/;:;/g' > $CMDFILE
   else
     sed "s|\(.*\)|bash -c '\1'|g" $1 > $CMDFILE
   endif
