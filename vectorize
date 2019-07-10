@@ -219,7 +219,6 @@ cat <<EOSLURM > $slurmfile
 #SBATCH -e $ERRFILE
 #SBATCH -o $OUTFILE
 
-module load netcdf
 module load R
 module load nco
 module load cdo
@@ -299,10 +298,7 @@ endif
 setenv TMPDIR /glade/scratch/$USER/vectemp
 mkdir -p $TMPDIR
 
-module load gnu
-module load mpt
-module load netcdf
-module load R/3.5.2
+module load R
 module load nco
 module load cdo
 module load ncl
