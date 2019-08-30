@@ -42,10 +42,14 @@ set torig = $out.$$.tmp.orig
 set ttemp = $out.$$.tmp.temp
 set tfill = $out.$$.tmp.fill
 
+if ($out == $in) then
+  echo "ERROR: outfile must be different from infile"
+  exit 1
+else
+  cp $in $out
+endif
+
 set boundsvar = `ncdump -h $in | grep time:bounds | cut -f 2 -d \"`
-
-cp $in $out
-
 
 if ($n < 0 ) then
     @ m = - $n
@@ -54,7 +58,7 @@ if ($n < 0 ) then
 
     cp $out $torig
     
-    ncks -O -h -a -d time,$first,$last $out $tfill
+    ncks -O -h --no-abc -d time,$first,$last $out $tfill
     ncap2 -O -h -s "$var = $var * 0 + $var@_FillValue" $tfill $ttemp    
     ncap2 -O -h -s "time=time-$offset*$m" $ttemp $tfill
 
@@ -73,7 +77,7 @@ if ($n > 0 ) then
     @ first = $nt - $n
     @ last  = $nt - 1
 
-    ncks -O -h -a -d time,$first,$last $out $tfill
+    ncks -O -h --no-abc -d time,$first,$last $out $tfill
     ncap2 -O -h -s "$var = $var * 0 + $var@_FillValue" $tfill $ttemp    
     ncap2 -O -h -s "time=time+$offset*($n+1)" $ttemp $tfill
 

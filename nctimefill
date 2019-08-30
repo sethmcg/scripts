@@ -46,12 +46,12 @@ set tfill = $out.$$.tmp.fill
 
 #set boundsvar = `ncdump -h $in | grep time:bounds | cut -f 2 -d \"`
 
-ncks -O -h -a -d time,0,$first $in $thead
-ncks -O -h -a -d time,$last, $in $ttail
+ncks -O -h --no-abc -d time,0,$first $in $thead
+ncks -O -h --no-abc -d time,$last, $in $ttail
 
 @ ff = ($first - $n) + 1
 
-ncks -O -h -a -d time,$ff,$first $in $tmath
+ncks -O -h --no-abc -d time,$ff,$first $in $tmath
 ncap2 -O -h -s "$var = $var * 0 + $var@_FillValue" $tmath $tfill
 ncap2 -O -h -s "time=time-time(0)+time($n-1)+$offset" $tfill $tfill.2
 
