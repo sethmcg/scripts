@@ -1,0 +1,57 @@
+#!/bin/bash -x
+
+## first arg: which year you want
+
+## second arg: output file name
+
+## rest of args: all the netcdf files
+
+year=$1
+let next=$year+1
+shift
+
+out=$1
+shift
+
+
+
+## extract data for target year
+echo "$@" | ncrcat -O -o 360.nc -d time,"$year-01-01","$next-01-02" 
+
+
+## extract months
+for mon in `seq -w 12`
+do
+    ncks -d time,"$year-$mon-01 00","$year-$mon-30 18" 360.nc $mon.nc
+done
+## trim two days off Feb
+ncks -O -d time,"$year-02-01 00","$year-02-28 18" 360.nc 02.nc
+
+
+## extract day-pairs on either side of intercalary days
+ncks -d time,"$year-01-30 00","$year-02-01 18" 360.nc two.JF.nc
+ncks -d time,"$year-03-30 00","$year-04-01 18" 360.nc two.MA.nc
+ncks -d time,"$year-05-30 00","$year-06-01 18" 360.nc two.MJ.nc
+ncks -d time,"$year-07-30 00","$year-08-01 18" 360.nc two.JA.nc
+ncks -d time,"$year-08-30 00","$year-09-01 18" 360.nc two.AS.nc
+ncks -d time,"$year-10-30 00","$year-11-01 18" 360.nc two.ON.nc
+ncks -d time,"$year-12-30 00","$next-01-01 18" 360.nc two.DJ.nc
+
+## interpolate day-pairs
+for mm in JF MA MJ JA AS ON DJ
+do
+  for i in `seq 4`
+  do
+      ncra -F -d time,$i,,4 two.$mm.nc hr.$mm.$i.nc
+  done
+  ncrcat -n 4,1,1 hr.$mm.1.nc $mm.nc
+done
+
+## concatenate everything together
+ncrcat -O -o $out 01.nc JF.nc 02.nc 03.nc MA.nc 04.nc 05.nc MJ.nc 06.nc 07.nc JA.nc 08.nc AS.nc 09.nc 10.nc ON.nc 11.nc 12.nc DJ.nc
+
+## overwrite time coordinate
+ncap2 -O -s 'time=array(0.0,0.25,$time)' $out $out
+ncatted -a calendar,time,o,c,noleap -a units,time,o,c,"days since $year-01-01 00:00" $out
+
+rm two.??.nc ??.nc 360.nc hr.??.?.nc
