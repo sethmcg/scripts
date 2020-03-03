@@ -8,7 +8,8 @@ set fold = 1
 set geyser = no
 set help = no
 set submit = yes
-set QUEUE = premium
+#set QUEUE = premium
+set QUEUE = economy
 set MEMORY = 2G
 set serial = no
 set WALLTIME = 00:10:00
@@ -108,7 +109,7 @@ Usage: vectorize [-d dir] [-h] [-j jobname] [-n] [-p project] [-q queue] [-w wal
   -m, --memory:    amount of memory needed (only when running on geyser)
   -n, --nosub:     don't submit job, just set everything up
   -p, --project:   project code; defaults to PROJECT envariable (if set)
-  -q, --queue:     queue to submit to; defaults to premium
+  -q, --queue:     queue to submit to; defaults to economy
   -s, --serial:    runs in serial on share queue instead (ignores -q)
   -w, --walltime:  wallclock limit for job; defaults to 00:10:00
   cmdfile: a file with one command per line, to be run in parallel
