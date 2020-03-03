@@ -16,7 +16,9 @@ opt = True
 opt@ForceOverwrite = True
 
 if(isvar("maskvar")) then
-  opt@Mask2D = fin->$maskvar$
+  ; https://www.ncl.ucar.edu/Document/Functions/ESMF/curvilinear_to_SCRIP.shtml
+  landmask = fin->$maskvar$
+  opt@GridMask = where(landmask.le.0,0,1)    ; use "Mask2D" in NCL V6.2.1 and earlier
 end if
 
 
