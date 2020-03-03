@@ -77,7 +77,7 @@ spd = sqrt(spd)
 
 delete_VarAtts(spd, -1)
 
-spd@long_name = "10-meter Wind Speed"
+spd@long_name = "Near-Surface Wind Speed"
 spd@standard_name = "wind_speed"
 
 varatts = (/"units", "missing_value", "_FillValue", "coordinates", "grid_mapping"/)

@@ -151,7 +151,7 @@ hurs&time = fint->time
 ;hurs&lat = fint->lat
 
 hurs@units = "1"
-hurs@long_name = "Relative Humidity"
+hurs@long_name = "Near-Surface Relative Humidity"
 hurs@standard_name = "relative_humidity"
 hurs@missing_value = 1.e+20
 hurs@_FillValue = 1.e+20
