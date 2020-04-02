@@ -80,12 +80,16 @@ delete_VarAtts(spd, -1)
 spd@long_name = "Near-Surface Wind Speed"
 spd@standard_name = "wind_speed"
 
-varatts = (/"units", "missing_value", "_FillValue", "coordinates", "grid_mapping"/)
 
-do i = 0,dimsizes(varatts)-1      
-  spd@$varatts(i)$ = finu->uas@$varatts(i)$
+varatts = (/"units", "missing_value", "_FillValue", "cell_methods", "bias_correction", "remap", "coordinates", "grid_mapping"/)
+
+valid = isatt(finu->uas, varatts)
+
+do i = 0,dimsizes(varatts)-1
+  if(valid(i)) then
+    spd@$varatts(i)$ = finu->uas@$varatts(i)$
+  end if
 end do
-
 
 fout->spd = spd
 

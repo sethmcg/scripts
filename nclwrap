@@ -37,7 +37,7 @@ if ($ncl == aggregate) then
 endif
 
 
-if ($ncl == wind-vector-plot) then
+if ($ncl == wind-vector-plot || $ncl == calc_spd) then
   set echo
   ncl -Q -n $1 ufile=\"$2\" vfile=\"$3\" outfile=\"$4\" $argv[5-]
   unset echo
