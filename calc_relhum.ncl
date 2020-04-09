@@ -1,14 +1,16 @@
 ;;; NCL script to calculate relative humidity or dewpoint from
 ;;; specific humidity, temperature, and pressure
 
+print(systemfunc("date"))
+
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
 
-qfile="/glade/collections/cdg/data/cordex/bcdata2/mbcn-Daymet-ns/NAM-44i/day/CRCM5-UQAM/MPI-ESM-MR/hist/huss/huss.hist.MPI-ESM-MR.CRCM5-UQAM.day.NAM-44i.mbcn-Daymet-ns.nc"
-tfile="/glade/collections/cdg/data/cordex/bcdata2/mbcn-Daymet-ns/NAM-44i/day/CRCM5-UQAM/MPI-ESM-MR/hist/tmean/tmean.hist.MPI-ESM-MR.CRCM5-UQAM.day.NAM-44i.mbcn-Daymet-ns.nc"
-pfile="/glade/p/cisl/risc/narccap/obs/Daymet/ps/sps.Daymet.fixed.NAM-44i.nc"
-outfile="~/glade-scratch/test-hurs.nc"
+qfile="/glade/scratch/mcginnis/huss-10k.nc"
+tfile="/glade/scratch/mcginnis/tmean-10k.nc"
+pfile="/glade/scratch/mcginnis/sps.Daymet.fixed.NAM-22i.nc"
+outfile="~/glade-scratch/mono-hurs-10k.nc"
 pname="sps"
 tname="tmean"
 verbose=True
@@ -68,6 +70,7 @@ if (.not. isvar("outname")) then
   end if
 end if
 
+print(systemfunc("date")+tochar(9)+"addfiles")
 
 finp = addfile(pfile, "r")
 finq = addfile(qfile, "r")
@@ -94,6 +97,7 @@ end if
 
 
 ;; file setup, since we'll write output as we go
+print(systemfunc("date")+tochar(9)+"create out")
 
 system("rm -f " + outfile)
 fout = addfile(outfile, "c")
@@ -139,6 +143,7 @@ fout@tracking_id = systemfunc("uuidgen")
 
 
 ; copy variables
+print(systemfunc("date")+tochar(9)+"copy vars to out")
 
 var_names = getfilevarnames (fint) ;
 
@@ -164,47 +169,66 @@ else
 end if
 end if
 
+print(systemfunc("date")+tochar(9)+"allocate result")
+
 
 result = new(getfilevardimsizes(fint, tname), float, missval) 
 result@missing_value = result@_FillValue
 
 
+print(systemfunc("date")+tochar(9)+"read p")
 pstatic = .not. isfilevardim(finp, pname, "time")
 if(pstatic) then
+  p = conform(result, finp->$pname$, (/1,2/))
+else 
   p = finp->$pname$
 end if
 
-nt = getfilevardimsizes(fint, "time")
 
-do i=0, nt-1
 
-  t = fint->$tname$(i,:,:)
+;;nt = getfilevardimsizes(fint, "time")
+
+;;do i=0, nt-1
+print(systemfunc("date")+tochar(9)+"read t")
+
+;;  t = fint->$tname$(i,:,:)
+  t = fint->$tname$
   if(tunits .eq. "degC") then
     t = t + 273.15
   end if
 
-  if(.not.pstatic) then
-    p = finp->$pname$(i,:,:)
-  end if
+;;  if(.not.pstatic) then
+;;    p = finp->$pname$(i,:,:)
+;;  end if
 
-  q = finq->$qname$(i,:,:)
+;;  q = finq->$qname$(i,:,:)
+print(systemfunc("date")+tochar(9)+"read q")
+
+  q = finq->$qname$
   x = q/(1-q)  ;; x = mixing ratio
 
+print(systemfunc("date")+tochar(9)+"calc start")
 
   ;; NB: function output is % RH; dewtemp_trh wants % RH, but CF unit is 1
   temphurs = relhum(t,x,p)
   if(dewpt) then
     tempdewpt = dewtemp_trh(t,temphurs)
-    result(i,:,:) = tofloat((/tempdewpt/))
+;;    result(i,:,:) = tofloat((/tempdewpt/))
   else 
-    temphurs = temphurs/100
-    result(i,:,:) = tofloat((/temphurs/))
+print(systemfunc("date")+tochar(9)+"assign result")
+
+result = tofloat(temphurs/100)
+;;    temphurs = temphurs/100
+;;    result(i,:,:) = tofloat((/temphurs/))
   end if
 
-   if (verbose .and. (i%50) .eq. 0) then 
-     print(""+i+tochar(9)+systemfunc("date")) 
-   end if 
-end do
+;;   if (verbose .and. (i%50) .eq. 0) then 
+;;     print(""+i+tochar(9)+systemfunc("date")) 
+;;   end if 
+;;end do
+
+print(systemfunc("date")+tochar(9)+"calc finish")
+
 
 
 xdim = fint->$tname$!2
@@ -243,9 +267,11 @@ do i = 0,dimsizes(varatts)-1
   end if
 end do
 
+print(systemfunc("date")+tochar(9)+"write result")
 
 fout->$outname$ = result
 
+print(systemfunc("date")+tochar(9)+"done")
 
 exit
 
