@@ -1,16 +1,14 @@
 ;;; NCL script to calculate relative humidity or dewpoint from
 ;;; specific humidity, temperature, and pressure
 
-print(systemfunc("date"))
-
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
 
-qfile="/glade/scratch/mcginnis/huss-10k.nc"
-tfile="/glade/scratch/mcginnis/tmean-10k.nc"
+qfile="/glade/scratch/mcginnis/huss-1k.nc"
+tfile="/glade/scratch/mcginnis/tmean-1k.nc"
 pfile="/glade/scratch/mcginnis/sps.Daymet.fixed.NAM-22i.nc"
-outfile="~/glade-scratch/mono-hurs-10k.nc"
+outfile="~/glade-scratch/hurs-test4.nc"
 pname="sps"
 tname="tmean"
 verbose=True
@@ -39,6 +37,15 @@ verbose=True
 ;; new nco-style parent histories
 ;; convert input units if needed
 
+
+;; print timestamped message to log progress
+procedure message(text) begin
+  if(verbose) then
+    print(systemfunc("date '+%F %T'") + str_get_tab + text)
+  end if
+end
+
+;; control flags
 
 if (.not. isvar("verbose")) then
   verbose = False
@@ -70,7 +77,10 @@ if (.not. isvar("outname")) then
   end if
 end if
 
-print(systemfunc("date")+tochar(9)+"addfiles")
+
+message("starting calc_relhum")
+
+;; add input files
 
 finp = addfile(pfile, "r")
 finq = addfile(qfile, "r")
@@ -97,8 +107,7 @@ end if
 
 
 ;; file setup, since we'll write output as we go
-print(systemfunc("date")+tochar(9)+"create out")
-
+message("starting output file setup")
 system("rm -f " + outfile)
 fout = addfile(outfile, "c")
 filedimdef(fout,"time",-1,True)  ;; make time dimension unlimited
@@ -106,13 +115,19 @@ filedimdef(fout,"time",-1,True)  ;; make time dimension unlimited
 
 ;; use tfile as template, since it has a reference height
 
-; global attributes
-
+;; copy global attributes
 
 att_names = getvaratts(fint) 
 
 do i = 0,dimsizes(att_names)-1
-  fout@$att_names(i)$ = fint@$att_names(i)$
+  if(att_names(i) .eq. "history_of_appended_files") then
+    ;; skip
+  else if(att_names(i) .eq. "title") then
+    fout@title = str_sub_str(fint@title, "Temperature", "Relative Humidity")
+  else
+    fout@$att_names(i)$ = fint@$att_names(i)$
+  end if
+  end if
 end do
 
 
@@ -120,7 +135,7 @@ end do
 ;; To track the full history of the file, we need histories of all
 ;; the ancestors.  Following NCO style
 
-BR = tochar(10)
+BR = str_get_nl()
 
 parents = "Parent files had the following history attributes:"+BR
 parents = parents + "Specific humidity file "+qfile+":"+BR
@@ -142,23 +157,62 @@ fout@history = history
 fout@tracking_id = systemfunc("uuidgen")
 
 
-; copy variables
-print(systemfunc("date")+tochar(9)+"copy vars to out")
+; copy coordinate and ancillary variables
+var_names = getfilevarnames (fint)
 
-var_names = getfilevarnames (fint) ;
-
-do i = 0,dimsizes(var_names)-1      
-if (var_names(i) .ne. tname) then
-  fout->$var_names(i)$ = fint->$var_names(i)$
-end if
+do i = 0, dimsizes(var_names)-1      
+  if (var_names(i) .ne. tname) then
+    fout->$var_names(i)$ = fint->$var_names(i)$
+  end if
 end do
+
+message("output file setup done")
+
+
+;; read inputs
+
+message("read q")
+q = finq->$qname$
+x = q/(1-q)  ;; x = mixing ratio
+
+message("read t")
+t = fint->$tname$
+if(tunits .eq. "degC") then
+  t = t + 273.15
+end if
+
+message("read p")
+;; allow for static pressure instead of time-varying
+if(isfilevardim(finp, pname, "time")) then
+    p = finp->$pname$
+else 
+  p = conform(q, finp->$pname$, (/1,2/))
+end if
 
 
 
 ;; Calculate relative humidity
 
-;; Because there's not enough room to fit everything in memory at
-;; once, we loop on time
+message("starting relhum calculation")
+temphurs = relhum(t,x,p)
+message("relhum calculation done")
+
+if(dewpt) then
+  message("starting dewtemp calculation")
+  result = dewtemp_trh(t,temphurs)
+  message("dewtemp calculation done")
+else 
+  ;; NB: function output is % RH; dewtemp_trh wants % RH, but CF unit is 1
+  message("convert %RH to (0,1)")
+  result = tofloat(temphurs/100)
+  result = result < 1  ;; clip values above 100%
+end if
+
+
+message("setup ancillary & metadata on result")
+
+
+;; set missing value
 
 if(isfilevaratt(fint, tname, "missing_value")) then
   missval = fint->$tname$@missing_value
@@ -169,67 +223,8 @@ else
 end if
 end if
 
-print(systemfunc("date")+tochar(9)+"allocate result")
-
-
-result = new(getfilevardimsizes(fint, tname), float, missval) 
-result@missing_value = result@_FillValue
-
-
-print(systemfunc("date")+tochar(9)+"read p")
-pstatic = .not. isfilevardim(finp, pname, "time")
-if(pstatic) then
-  p = conform(result, finp->$pname$, (/1,2/))
-else 
-  p = finp->$pname$
-end if
-
-
-
-;;nt = getfilevardimsizes(fint, "time")
-
-;;do i=0, nt-1
-print(systemfunc("date")+tochar(9)+"read t")
-
-;;  t = fint->$tname$(i,:,:)
-  t = fint->$tname$
-  if(tunits .eq. "degC") then
-    t = t + 273.15
-  end if
-
-;;  if(.not.pstatic) then
-;;    p = finp->$pname$(i,:,:)
-;;  end if
-
-;;  q = finq->$qname$(i,:,:)
-print(systemfunc("date")+tochar(9)+"read q")
-
-  q = finq->$qname$
-  x = q/(1-q)  ;; x = mixing ratio
-
-print(systemfunc("date")+tochar(9)+"calc start")
-
-  ;; NB: function output is % RH; dewtemp_trh wants % RH, but CF unit is 1
-  temphurs = relhum(t,x,p)
-  if(dewpt) then
-    tempdewpt = dewtemp_trh(t,temphurs)
-;;    result(i,:,:) = tofloat((/tempdewpt/))
-  else 
-print(systemfunc("date")+tochar(9)+"assign result")
-
-result = tofloat(temphurs/100)
-;;    temphurs = temphurs/100
-;;    result(i,:,:) = tofloat((/temphurs/))
-  end if
-
-;;   if (verbose .and. (i%50) .eq. 0) then 
-;;     print(""+i+tochar(9)+systemfunc("date")) 
-;;   end if 
-;;end do
-
-print(systemfunc("date")+tochar(9)+"calc finish")
-
-
+result@_FillValue = missval
+result@missing_value = missval
 
 xdim = fint->$tname$!2
 result!2 = xdim
@@ -267,11 +262,11 @@ do i = 0,dimsizes(varatts)-1
   end if
 end do
 
-print(systemfunc("date")+tochar(9)+"write result")
+message("write result")
 
 fout->$outname$ = result
 
-print(systemfunc("date")+tochar(9)+"done")
+message("calc_relhum done")
 
 exit
 
