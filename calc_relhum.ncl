@@ -5,16 +5,6 @@ load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
 
-qfile="/glade/scratch/mcginnis/huss-1k.nc"
-tfile="/glade/scratch/mcginnis/tmean-1k.nc"
-pfile="/glade/scratch/mcginnis/sps.Daymet.fixed.NAM-22i.nc"
-outfile="~/glade-scratch/hurs-test4.nc"
-pname="sps"
-tname="tmean"
-verbose=True
-
-
-
 ;; Command-line arguments:
 ;; pfile     required: name of input file with pressure
 ;; qfile     required: name of input file with specific humidity
@@ -26,16 +16,6 @@ verbose=True
 ;; qname     optional: name of specific humidity variable (default: "huss")
 ;; tname     optional: name of temperature variable (default: "tas")
 ;; outname   optional: name of output variable (default: "hurs" / "dewpt")
-
-;; Changes:
-
-;; use overrideable varnames
-;; hursfile -> outfile
-;; psfile tasfile hussfile -> pfile tfile qfile
-;; flag for dewpt instead of hurs
-;; flag for static pressure
-;; new nco-style parent histories
-;; convert input units if needed
 
 
 ;; print timestamped message to log progress
