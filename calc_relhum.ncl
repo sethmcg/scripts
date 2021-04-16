@@ -18,13 +18,6 @@ load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
 ;; outname   optional: name of output variable (default: "hurs" / "dewpt")
 
 
-;; print timestamped message to log progress
-procedure message(text) begin
-  if(verbose) then
-    print(systemfunc("date '+%F %T'") + str_get_tab + text)
-  end if
-end
-
 ;; control flags
 
 if (.not. isvar("verbose")) then
@@ -34,6 +27,15 @@ end if
 if (.not. isvar("dewpt")) then
   dewpt = False
 end if
+
+
+;; print timestamped message to log progress
+procedure message(text) begin
+  if(verbose) then
+    print(systemfunc("date '+%F %T'") + str_get_tab + text)
+  end if
+end
+
 
 ;; overrideable variable names
 
@@ -182,10 +184,8 @@ if(dewpt) then
   result = dewtemp_trh(t,temphurs)
   message("dewtemp calculation done")
 else 
-  ;; NB: function output is % RH; dewtemp_trh wants % RH, but CF unit is 1
-  message("convert %RH to (0,1)")
-  result = tofloat(temphurs/100)
-  result = result < 1  ;; clip values above 100%
+  message("clip %RH to (0,100)")
+  result = tofloat(temphurs < 100)  ;; clip values above 100%
 end if
 
 
@@ -223,7 +223,7 @@ if(dewpt) then
   result@long_name = "Dew Point Temperature"
   result@standard_name = "dew_point_temperature"
 else
-  result@units = "1"
+  result@units = "%"
   result@long_name = "Near-Surface Relative Humidity"
   result@standard_name = "relative_humidity"
 end if
