@@ -8,11 +8,13 @@ set fold = 1
 set geyser = no
 set help = no
 set submit = yes
-#set QUEUE = premium
 set QUEUE = economy
-set MEMORY = 2G
+set defaultm = yes
+# set MEMORY = 2G
+set memory = no
 set serial = no
 set WALLTIME = 00:10:00
+
 
 ## Argument parsing from util-linux-ng getopt-parse.tcsh example.
 
@@ -53,6 +55,7 @@ while (1)
     breaksw;
   case -m:
   case --memory:
+    set defaultm = no
     set MEMORY = $2:q ; shift ; shift
     breaksw;
   case -n:
@@ -106,11 +109,11 @@ Usage: vectorize [-d dir] [-h] [-j jobname] [-n] [-p project] [-q queue] [-w wal
   -g, --geyser:    runs in serial on geyser instead (ignores -q, -s)
   -h, --help:      prints this help message
   -j, --jobname:   qsub jobname; defaults to `basename cmdfile .txt`
-  -m, --memory:    amount of memory needed (only when running on geyser)
+  -m, --memory:    memory needed in GB (only useful with -s or -q)
   -n, --nosub:     don't submit job, just set everything up
   -p, --project:   project code; defaults to PROJECT envariable (if set)
   -q, --queue:     queue to submit to; defaults to economy
-  -s, --serial:    runs in serial on share queue instead (ignores -q)
+  -s, --serial:    runs in serial on share queue (ignores -q)
   -w, --walltime:  wallclock limit for job; defaults to 00:10:00
   cmdfile: a file with one command per line, to be run in parallel
 
@@ -141,18 +144,28 @@ if ( $geyser == yes ) then
   if ( $serial == yes ) then
     echo "vectorize: WARNING: running in serial on geyser; ignoring -s flag"
   endif
-else
-  if ( $MEMORY != 2G ) then
-    echo "vectorize: WARNING: not running on geyser; ignoring user-specified memory ($MEMORY)"
+  if ( $defaultm == yes) then
+    set MEMORY = 2
+  endif
+#else
+#  if ( $MEMORY != 2G ) then
+#    echo "vectorize: WARNING: not running on geyser; ignoring user-specified memory ($MEMORY)"
+#  endif
+endif
+
+if( $defaultm == no) then
+  if ($serial == no && $geyser == no) then
+    echo "vectorize: WARNING: not running in serial or on geyser; ignoring user-specified memory ($MEMORY)"
   endif
 endif
+
 
 if ( $serial == yes ) then
   if( $defaultq == no ) then
     echo "vectorize: WARNING: running in serial on share queue; ignoring user-specified queue ($QUEUE)"
   endif
   if( $fold > 1 ) then
-    echo "vectorize: WARNING: running in serial on share queue; ignoring user-specific folding ($fold)"
+    echo "vectorize: WARNING: running in serial on share queue; ignoring user-specified folding ($fold)"
   endif
   set QUEUE = share
 endif
@@ -213,7 +226,7 @@ cat <<EOSLURM > $slurmfile
 #SBATCH -J $JOBNAME
 #SBATCH -n 1
 #SBATCH --ntasks-per-node=1
-#SBATCH --mem=$MEMORY
+#SBATCH --mem=${MEMORY}G
 #SBATCH -t $WALLTIME
 #SBATCH -A $PROJECT
 #SBATCH -p dav
@@ -267,9 +280,15 @@ EOPBSHEAD
 
 if ($serial == yes) then
 
+  if ($defaultm == no) then
+    set memstring = ":mem=${MEMORY}GB"
+  else
+    set memstring = ""
+  endif
+
   cat <<EOSERIAL >> $pbsfile
 # CPU resource request for serial job in shared queue
-#PBS -l select=1:ncpus=1
+#PBS -l select=1:ncpus=1$memstring
 EOSERIAL
 
 else
