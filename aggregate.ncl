@@ -53,10 +53,14 @@ format = "%Y-%N-%D %H:%M:%S"
 ;; offset  (optional: float added to time to shift day boundary)
 ;; taint   (boolean option: propagate missing values?)
 ;; verbose (boolean option: print progress indicators?)
-
+;; donemsg (boolean option: print completion message?)
 
 if (.not. isvar("verbose")) then
   verbose = False
+end if
+
+if (.not. isvar("donemsg")) then
+  donemsg = False
 end if
 
 if (.not. isvar("check")) then
@@ -400,7 +404,7 @@ outdata@cell_methods = cmstring
 
 if (verbose) then print("Creating output file") end if
 
-system("rm "+outfile)
+system("rm -f "+outfile)
 fout = addfile(outfile, "c")
 filedimdef(fout,"time",-1,True)  ;; make time dimension unlimited
 
@@ -459,6 +463,8 @@ fout@history = hstring+inttochar(10)+fout@history
 ;; update unique tracking_id
 fout@tracking_id = systemfunc("uuidgen")
 
+
+if (donemsg) then print("Done: "+outfile) end if
 
 ;; provenance checking - to be sure that your data is coming from where you think it should.
 
