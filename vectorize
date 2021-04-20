@@ -10,7 +10,6 @@ set QUEUE = economy
 set defaultm = yes
 # set MEMORY = 2G
 set memory = no
-set serial = no
 set WALLTIME = 00:10:00
 
 
@@ -19,7 +18,7 @@ set WALLTIME = 00:10:00
 # Use a temp variable b/c eval nukes getopt return value.  ':q' copies
 # argv list w/ no substitutions
 
-set temp=(`getopt -a -n vectorize -s tcsh -o d:ghj:m:np:q:sw: --long dir:,help,nosub,memory:,project:,queue:,serial,walltime: -- $argv:q`)
+set temp=(`getopt -a -n vectorize -s tcsh -o d:ghj:m:np:q:sw: --long dir:,help,nosub,memory:,project:,queue:,walltime: -- $argv:q`)
 if ($? != 0) then
   echo "Terminating..." >/dev/stderr
   exit 1
@@ -61,10 +60,6 @@ while (1)
     set defaultq = no
     set QUEUE = $2:q ; shift ; shift
     breaksw;
-  case -s:
-  case --serial:
-    set serial = yes ; shift
-    breaksw 
   case -w:
   case --walltime:
     set WALLTIME = $2:q ; shift ; shift
@@ -101,7 +96,6 @@ Usage: vectorize [-d dir] [-h] [-j jobname] [-n] [-p project] [-q queue] [-w wal
   -n, --nosub:     don't submit job, just set everything up
   -p, --project:   project code; defaults to PROJECT envariable (if set)
   -q, --queue:     queue to submit to; defaults to economy
-  -s, --serial:    runs in serial on share queue (ignores -q)
   -w, --walltime:  wallclock limit for job; defaults to 00:10:00
   cmdfile: a file with one command per line, to be run in parallel
 
@@ -124,20 +118,6 @@ endif
 
 
 ## test for mutually exclusive flags
-
-if( $defaultm == no) then
-  if ($serial == no) then
-    echo "vectorize: WARNING: not running in serial; ignoring user-specified memory ($MEMORY)"
-  endif
-endif
-
-
-if ( $serial == yes ) then
-  if( $defaultq == no ) then
-    echo "vectorize: WARNING: running in serial on share queue; ignoring user-specified queue ($QUEUE)"
-  endif
-  set QUEUE = share
-endif
 
 
 ## create output dir
@@ -163,11 +143,11 @@ set pbsfile = $dir/pbs
 
 ## commands need to be wrapped in a shell invocation for MPMD
 
-if ($serial == yes) then
-  cp $1 $CMDFILE
-else 
+#if ($serial == yes) then
+#  cp $1 $CMDFILE
+#else 
   sed "s|\(.*\)|bash -c '\1'|g" $1 > $CMDFILE
-endif
+#endif
 
 
 ## create PBS batch script
@@ -198,24 +178,24 @@ cat <<EOPBSHEAD > $pbsfile
 
 EOPBSHEAD
 
-if ($serial == yes) then
+# if ($serial == yes) then
+# 
+#   if ($defaultm == no) then
+#     set memstring = ":mem=${MEMORY}GB"
+#   else
+#     set memstring = ""
+#   endif
+# 
+#   cat <<EOSERIAL >> $pbsfile
+# # CPU resource request for serial job in shared queue
+# #PBS -l select=1:ncpus=1$memstring
+# EOSERIAL
+# 
+# else
 
-  if ($defaultm == no) then
-    set memstring = ":mem=${MEMORY}GB"
-  else
-    set memstring = ""
-  endif
-
-  cat <<EOSERIAL >> $pbsfile
-# CPU resource request for serial job in shared queue
-#PBS -l select=1:ncpus=1$memstring
-EOSERIAL
-
-else
-
-  set NTASK = `cat $CMDFILE | wc -l`
-  set NNODE = `perl -w -e "use POSIX; print ceil($NTASK/36)"`
-  set NCPUS = `perl -w -e "use POSIX; print ceil($NTASK/$NNODE)"`
+set NTASK = `cat $CMDFILE | wc -l`
+set NNODE = `perl -w -e "use POSIX; print ceil($NTASK/36)"`
+set NCPUS = `perl -w -e "use POSIX; print ceil($NTASK/$NNODE)"`
 
   cat <<EOPARALLEL >> $pbsfile
 # CPU resource request
@@ -245,16 +225,16 @@ module load ncl
 
 EOPBSMID
 
-if ($serial == yes) then
-  cat <<EOSTAIL >> $pbsfile
-bash $CMDFILE
-EOSTAIL
-else
+#if ($serial == yes) then
+#  cat <<EOSTAIL >> $pbsfile
+#bash $CMDFILE
+#EOSTAIL
+#else
   cat <<EOPTAIL >> $pbsfile
 setenv MPI_SHEPHERD true
 mpiexec_mpt -n $NTASK launch_cf.sh $CMDFILE
 EOPTAIL
-endif
+#endif
 
 
 ## submit job (or not)
