@@ -1,4 +1,4 @@
-#!/bin/tcsh -f
+#!/bin/tcsh -fx
 
 ## given a file of commands (one command per line), runs them in
 ## parallel on cheyenne using commandfile MPMD approach
@@ -7,6 +7,7 @@ set defaultq = yes
 set help = no
 set submit = yes
 set QUEUE = economy
+set defaulte = yes
 set defaultm = yes
 # set MEMORY = 2G
 set memory = no
@@ -18,7 +19,7 @@ set WALLTIME = 00:10:00
 # Use a temp variable b/c eval nukes getopt return value.  ':q' copies
 # argv list w/ no substitutions
 
-set temp=(`getopt -a -n vectorize -s tcsh -o d:ghj:m:np:q:sw: --long dir:,help,nosub,memory:,project:,queue:,walltime: -- $argv:q`)
+set temp=(`getopt -a -n vectorize -s tcsh -o d:e:ghj:m:np:q:sw: --long dir:,env:,help,nosub,memory:,project:,queue:,walltime: -- $argv:q`)
 if ($? != 0) then
   echo "Terminating..." >/dev/stderr
   exit 1
@@ -34,6 +35,11 @@ while (1)
   case -d:
   case --dir:
     set dir = $2:q ; shift ; shift
+    breaksw;
+  case -e:
+  case --env:
+    set defaulte = no
+    set env = $2:q ; shift ; shift
     breaksw;
   case -h:
     set help = yes ; shift
@@ -90,12 +96,13 @@ if($help == yes || $PROJECT == none || $#argv != 1) then
   cat <<EOUSAGE
 Usage: vectorize [-d dir] [-h] [-j jobname] [-n] [-p project] [-q queue] [-w walltime] cmdfile
   -d, --dir:       directory for output; defaults to \`mktemp -d\`
+  -e, --env:       environment file; defaults to ~/.vectorize/<queue>
   -h, --help:      prints this help message
   -j, --jobname:   qsub jobname; defaults to `basename cmdfile .txt`
   -m, --memory:    memory needed in GB (only useful with -s or -q)
   -n, --nosub:     don't submit job, just set everything up
   -p, --project:   project code; defaults to PROJECT envariable (if set)
-  -q, --queue:     queue to submit to; defaults to economy
+  -q, --queue:     queue to submit to; defaults to 'economy'
   -w, --walltime:  wallclock limit for job; defaults to 00:10:00
   cmdfile: a file with one command per line, to be run in parallel
 
@@ -116,6 +123,22 @@ if (! -e $1) then
   exit 1
 endif
 
+
+## if not specified, set environment based on queue
+if ($defaulte == yes) then
+  set env = "~/.vectorize/$QUEUE"
+endif
+
+if (! -e $env) then
+  if ($defaulte == yes) then
+    echo "vectorize: ERROR: no default environment for queue '$QUEUE'; exiting"
+    echo "To resolve this error, create file ~/.vectorize/$QUEUE containing"
+    echo "any 'module load' commands, etc. needed in the PBS script."
+  else 
+    echo "vectorize: ERROR: no such environment file: '$env'; exiting"
+  endif
+  exit 1
+endif
 
 ## test for mutually exclusive flags
 
@@ -219,12 +242,10 @@ endif
 setenv TMPDIR /glade/scratch/$USER/vectemp
 mkdir -p $TMPDIR
 
-module load R
-module load nco
-module load cdo
-module load ncl
-
 EOPBSMID
+
+cat $env >> $pbsfile
+
 
 if ($QUEUE == share || $QUEUE == casper) then
   cat <<EOSTAIL >> $pbsfile
