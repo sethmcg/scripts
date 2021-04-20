@@ -1,4 +1,4 @@
-#!/bin/tcsh -fx
+#!/bin/tcsh -f
 
 ## given a file of commands (one command per line), runs them in
 ## parallel on cheyenne using commandfile MPMD approach
@@ -79,6 +79,8 @@ while (1)
 end
 
 
+## Check for bad arguments, print usage message
+
 if(! $?PROJECT) then
   set PROJECT = none
   echo "vectorize: ERROR: project code not defined"
@@ -109,7 +111,7 @@ Usage: vectorize [-d dir] [-h] [-j jobname] [-n] [-p project] [-q queue] [-w wal
   vectorize is a utility for running many independent single-threaded
   commands in parallel on cheyenne using MPDP parallelism.
 EOUSAGE
-exit 1
+  exit 1
 endif
 
 ## bail out early if no command file
@@ -139,8 +141,6 @@ if (! -e $env) then
   endif
   exit 1
 endif
-
-## test for mutually exclusive flags
 
 
 ## create output dir
@@ -233,11 +233,8 @@ set NCPUS = `perl -w -e "use POSIX; print ceil($NTASK/$NNODE)"`
 #PBS -l select=${NNODE}:ncpus=${NCPUS}:mpiprocs=${NCPUS}:ompthreads=1
 EOPARALLEL
 
-endif
 
   cat <<EOPBSMID >> $pbsfile
-
-#source /glade/u/apps/opt/lmod/4.2.1/init/tcsh 
 
 setenv TMPDIR /glade/scratch/$USER/vectemp
 mkdir -p $TMPDIR
@@ -275,4 +272,3 @@ exit 0
 
 # Copyright 2018 Univ. Corp. for Atmos. Research
 # Author: Seth McGinnis, mcginnis@ucar.edu
-
