@@ -4,7 +4,6 @@
 ## parallel on cheyenne using commandfile MPMD approach
 
 set defaultq = yes
-set geyser = no
 set help = no
 set submit = yes
 set QUEUE = economy
@@ -20,7 +19,7 @@ set WALLTIME = 00:10:00
 # Use a temp variable b/c eval nukes getopt return value.  ':q' copies
 # argv list w/ no substitutions
 
-set temp=(`getopt -a -n vectorize -s tcsh -o d:ghj:m:np:q:sw: --long dir:,geyser,help,nosub,memory:,project:,queue:,serial,walltime: -- $argv:q`)
+set temp=(`getopt -a -n vectorize -s tcsh -o d:ghj:m:np:q:sw: --long dir:,help,nosub,memory:,project:,queue:,serial,walltime: -- $argv:q`)
 if ($? != 0) then
   echo "Terminating..." >/dev/stderr
   exit 1
@@ -37,10 +36,6 @@ while (1)
   case --dir:
     set dir = $2:q ; shift ; shift
     breaksw;
-  case -g:
-  case --geyser:
-    set geyser = yes ; shift
-    breaksw
   case -h:
     set help = yes ; shift
     breaksw
@@ -100,7 +95,6 @@ if($help == yes || $PROJECT == none || $#argv != 1) then
   cat <<EOUSAGE
 Usage: vectorize [-d dir] [-h] [-j jobname] [-n] [-p project] [-q queue] [-w walltime] cmdfile
   -d, --dir:       directory for output; defaults to \`mktemp -d\`
-  -g, --geyser:    runs in serial on geyser instead (ignores -q, -s)
   -h, --help:      prints this help message
   -j, --jobname:   qsub jobname; defaults to `basename cmdfile .txt`
   -m, --memory:    memory needed in GB (only useful with -s or -q)
@@ -131,25 +125,9 @@ endif
 
 ## test for mutually exclusive flags
 
-if ( $geyser == yes ) then
-  if( $defaultq == no ) then
-    echo "vectorize: WARNING: running in serial on geyser; ignoring user-specified queue ($QUEUE)"
-  endif
-  if ( $serial == yes ) then
-    echo "vectorize: WARNING: running in serial on geyser; ignoring -s flag"
-  endif
-  if ( $defaultm == yes) then
-    set MEMORY = 2
-  endif
-#else
-#  if ( $MEMORY != 2G ) then
-#    echo "vectorize: WARNING: not running on geyser; ignoring user-specified memory ($MEMORY)"
-#  endif
-endif
-
 if( $defaultm == no) then
-  if ($serial == no && $geyser == no) then
-    echo "vectorize: WARNING: not running in serial or on geyser; ignoring user-specified memory ($MEMORY)"
+  if ($serial == no) then
+    echo "vectorize: WARNING: not running in serial; ignoring user-specified memory ($MEMORY)"
   endif
 endif
 
@@ -180,54 +158,17 @@ endif
 set CMDFILE = $dir/cmd
 set OUTFILE = $dir/out
 set ERRFILE = $dir/err
-if( $geyser == yes ) then
-  set slurmfile = $dir/slurm
-else
-  set pbsfile = $dir/pbs
-endif
+set pbsfile = $dir/pbs
 
 
 ## commands need to be wrapped in a shell invocation for MPMD
 
-if ($serial == yes || $geyser == yes) then
+if ($serial == yes) then
   cp $1 $CMDFILE
 else 
   sed "s|\(.*\)|bash -c '\1'|g" $1 > $CMDFILE
 endif
 
-
-if ( $geyser == yes ) then
-
-## create slurm batch script
-
-cat <<EOSLURM > $slurmfile
-#!/bin/tcsh
-#SBATCH -J $JOBNAME
-#SBATCH -n 1
-#SBATCH --ntasks-per-node=1
-#SBATCH --mem=${MEMORY}G
-#SBATCH -t $WALLTIME
-#SBATCH -A $PROJECT
-#SBATCH -p dav
-#SBATCH -e $ERRFILE
-#SBATCH -o $OUTFILE
-
-module load R
-module load nco
-module load cdo
-module load ncl
-
-tcsh $CMDFILE
-
-EOSLURM
-
-## submit job (or not)
-
-if($submit == yes) then
-  sbatch $slurmfile
-endif
-
-else
 
 ## create PBS batch script
 
@@ -326,8 +267,6 @@ if($submit == yes) then
   ## many commandfiles.
 
   sleep 1
-endif
-
 endif
 
 exit 0
