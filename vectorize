@@ -142,12 +142,13 @@ set pbsfile = $dir/pbs
 
 
 ## commands need to be wrapped in a shell invocation for MPMD
+## but not for running in share queue or on casper
 
-#if ($serial == yes) then
-#  cp $1 $CMDFILE
-#else 
+if ($QUEUE == share || $QUEUE == casper) then
+  cp $1 $CMDFILE
+else 
   sed "s|\(.*\)|bash -c '\1'|g" $1 > $CMDFILE
-#endif
+endif
 
 
 ## create PBS batch script
@@ -225,16 +226,16 @@ module load ncl
 
 EOPBSMID
 
-#if ($serial == yes) then
-#  cat <<EOSTAIL >> $pbsfile
-#bash $CMDFILE
-#EOSTAIL
-#else
+if ($QUEUE == share || $QUEUE == casper) then
+  cat <<EOSTAIL >> $pbsfile
+sh $CMDFILE
+EOSTAIL
+else
   cat <<EOPTAIL >> $pbsfile
 setenv MPI_SHEPHERD true
 mpiexec_mpt -n $NTASK launch_cf.sh $CMDFILE
 EOPTAIL
-#endif
+endif
 
 
 ## submit job (or not)
