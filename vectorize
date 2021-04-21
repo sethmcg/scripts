@@ -260,12 +260,6 @@ endif
 
 if($submit == yes) then
   qsub $pbsfile
-
-  ## PBS gets hosed if it gets more than about 1 job per second.
-  ## Sleep 1 second so that we don't make things sad when looping over
-  ## many commandfiles.
-
-  sleep 1
 endif
 
 exit 0
