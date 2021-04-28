@@ -131,6 +131,8 @@ endif
 #  echo "vectorize: ERROR: --memory option must be numeric"
 #endif 
 ## stop if memory * 36 > 109 on cheyenne or memory > 1500 on casper
+# set memstring=:memory=$MEMORY
+set memstring = ''
 
 
 ## if not specified, set environment based on queue
@@ -159,103 +161,87 @@ else
 endif
 
 
-## figure out how many jobs and split up commandfiles accordingly
+## figure out how many jobs and process commandfiles accordingly
+
+## share: one job, run commandfile as-is
+## casper: one job per task, split commandfile into single lines
+## other: split cmdfile into chunks & wrap in shell invocation for MPMD
+##        no memory requirement = use all 36 CPUs / node
+##        otherwise fill each node as full as possible
+##        normal nodes: ~45 GB memory, large nodes: ~109 GB
+##        (available of 64 and 128 GB, respectively)
+
+## use `cat cmdfile | wc` instead of `wc cmdfile` to drop filename
 
 if ($QUEUE == share) then
-  ## run commandfile in serial as a single job
-
   set NJOBS = 1
-
-  mkdir $dir/01
-  cp $1 $dir/01/cmd
+  set NCPUS = 1
 
 else if ($QUEUE == casper) then 
-  ## one job per task; split commandfile into single lines
-
-  set NJOBS = `cat $CMDFILE | wc -l`
-
-  ## repeated code, should refactor...
-  set ndigits = `echo -n $NJOBS | wc -c | sed -e 's/$/\n2/' | sort | tail -1`
-  split --numeric-suffix=1 -a $ndigits -l1 $1 $dir/cmd.  
-  foreach i (`seq -w 01 $NJOBS`)
-    mkdir $dir/$i
-    mv $dir/cmd.$i $dir/$i/cmd
-  end
-  unset ndigits
+  set NJOBS = `cat $1 | wc -l`
+  set NCPUS = 1
 
 else
-  ## on cheyenne
-
-  set ntasks = `cat $CMDFILE | wc -l`
-
+  set ntasks = `cat $1 | wc -l`
   if ($defaultm == yes) then
-    ## no memory requirement = use all 36 CPUs / node
     set NJOBS = `perl -w -e "use POSIX; print ceil($ntasks/36)"`
+    set NCPUS = 36
+
   else
-    ## normal nodes have up to 45 GB memory, large nodes have up to 109 GB
-    ## (available of 64 and 128 GB, respectively)
-    set taskspernode = `perl -w -e "use POSIX; print floor(109/$MEMORY)`
-#    if ($taskspernode < 18) then
-#      echo "vectorize: ERROR: less than 50% node utilization; use [flag] to override"
+    set NCPUS = `perl -w -e "use POSIX; print floor(109/$MEMORY)`
+#    if ($NCPUS < 18) then
+#      echo "vectorize: ERROR: less than 50% node utilization; use -f [?] to override"
 #      exit 1
 #    endif
-    set NJOBS = `perl -e -w "use POSIX; print(ceil($ntasks/$taskspernode))`
-    unset taskspernode
+    set NJOBS = `perl -e -w "use POSIX; print(ceil($ntasks/$NCPUS))`
   endif
   unset ntasks
-
-  set ndigits = `echo -n $NJOBS | wc -c | sed -e 's/$/\n2/' | sort | tail -1`
-  split --numeric-suffix=1 -a $ndigits -nl/$NJOBS $1 $dir/cmd.
-  foreach i (`seq -w 01 $NJOBS`)
-    mkdir $dir/$i
-    mv $dir/cmd.$i $dir/$i/cmd
-  end
-  unset ndigits
-
 endif
 
-#### HERE!  Splitting has been done, need to loop over NJOBS subdirs
 
+set jobs = `seq -w 01 $NJOBS`
+set ndigits = `echo -n $jobs[1] | wc -c`
+
+## do commandfile copying / splitting / wrapping
+if ($QUEUE == share) then
+  mkdir -p $dir/01
+  cp $1 $dir/01/cmd
+else if ($QUEUE == casper) then 
+  split --numeric-suffix=1 -a $ndigits -l1 $1 $dir/cmd.
+  foreach j ($jobs)
+    mkdir $dir/$j
+    mv $dir/cmd.$j $dir/$j/cmd
+  end
+else
+  split --numeric-suffix=1 -a $ndigits -nl/$NJOBS $1 $dir/cmd.
+  foreach j ($jobs)
+    mkdir $dir/$j
+    sed "s|\(.*\)|bash -c '\1'|g" $dir/cmd.$j > $dir/$j/cmd
+    rm $dir/cmd.$j
+  end
+endif
+
+unset ndigits
 
 
 
 ## setup
 
 if (! $?JOBNAME ) then
-  set JOBNAME = `basename $1 .txt`
+  set jobbase = `basename $1 .txt`
+else
+  seth jobbase = $JOBNAME
 endif
-
-set CMDFILE = $dir/cmd
-set OUTFILE = $dir/out
-set ERRFILE = $dir/err
-set pbsfile = $dir/pbs
+# todo: cleanup jobbase / jobname
 
 
+foreach j ($jobs)
 
-## commands need to be wrapped in a shell invocation for MPMD
-## but not for running in share queue or on casper
-
-if ($QUEUE == share || $QUEUE == casper) then
-  cp $1 $CMDFILE
-else 
-  sed "s|\(.*\)|bash -c '\1'|g" $1 > $CMDFILE
-endif
-
-
-# if ($serial == yes) then
-# 
-#   if ($defaultm == no) then
-#     set memstring = ":mem=${MEMORY}GB"
-#   else
-#     set memstring = ""
-#   endif
-# 
-#   cat <<EOSERIAL >> $pbsfile
-# # CPU resource request for serial job in shared queue
-# #PBS -l select=1:ncpus=1$memstring
-# EOSERIAL
-# 
-# else
+set JOBNAME = $jobbase.$j
+set CMDFILE = $dir/$j/cmd
+set OUTFILE = $dir/$j/out
+set ERRFILE = $dir/$j/err
+set pbsfile = $dir/$j/pbs
 
 
 ## create PBS batch script
@@ -284,41 +270,45 @@ cat <<EOF > $pbsfile
 # runtime limit
 #PBS -l walltime=$WALLTIME
 
-# CPU resource request
-# ntask = number of lines in file [$NTASK]
-# nnode = ceiling(ntask / 36)     [$NNODE]
-# ncpus = ceiling(ntask / nnode)  [$NCPUS]
-# select: number of nodes
-# ncpus: number of cpus per node to use
-# mpiprocs: matches ncpus (1 process per CPU)
-# ompthreads: always set to 1 (1 thread per process)
-#PBS -l select=${NNODE}:ncpus=${NCPUS}:mpiprocs=${NCPUS}:ompthreads=1
+# resource request
+# select: num nodes (always 1)
+# ncpus: num cpus per node to use for this job
+#        (36 for cheyenne, 1 for share or casper)
+# mpiprocs: matches ncpus (i.e., 1 process per CPU)
+# ompthreads: num threads per process (always 1)
+# memory (if set): memory required per cpu
+#        will affect which nodes get scheduled
+#PBS -l select=1:ncpus=${NCPUS}:mpiprocs=${NCPUS}:ompthreads=1$memstring
 
 setenv TMPDIR /glade/scratch/$USER/vectemp
 mkdir -p $TMPDIR
 
 EOF
 
+## add module load commands, etc.
 cat $env >> $pbsfile
 
 
+## commands to run cmdfile
 if ($QUEUE == share || $QUEUE == casper) then
-  cat <<EOSTAIL >> $pbsfile
-sh $CMDFILE
-EOSTAIL
+  echo "sh $CMDFILE" >> $pbsfile
 else
-  cat <<EOPTAIL >> $pbsfile
-setenv MPI_SHEPHERD true
-mpiexec_mpt -n $NTASK launch_cf.sh $CMDFILE
-EOPTAIL
+  echo "setenv MPI_SHEPHERD true" >> $pbsfile
+  echo "mpiexec_mpt -n $NCPUS launch_cf.sh $CMDFILE" >> $pbsfile
 endif
 
 
 ## submit job (or not)
 
 if($submit == yes) then
-  qsub $pbsfile
+  if ($QUEUE == casper && $NCAR_HOST == cheyenne) then
+    qsubcasper $pbsfile
+  else
+    qsub $pbsfile
+  endif
 endif
+
+end
 
 exit 0
 
