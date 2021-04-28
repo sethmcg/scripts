@@ -101,7 +101,7 @@ Usage: vectorize [-d dir] [-h] [-j jobname] [-n] [-p project] [-q queue] [-w wal
   -e, --env:       environment file; defaults to ~/.vectorize/<queue>
   -h, --help:      prints this help message
   -j, --jobname:   qsub jobname; defaults to `basename cmdfile .txt`
-  -m, --memory:    memory needed in GB (only useful with -s or -q)
+  -m, --memory:    memory needed per task in GB
   -n, --nosub:     don't submit job, just set everything up
   -p, --project:   project code; defaults to PROJECT envariable (if set)
   -q, --queue:     queue to submit to; defaults to 'economy'
@@ -124,6 +124,13 @@ if (! -e $1) then
   echo "vectorize: ERROR: no such command file: '$1'; exiting"
   exit 1
 endif
+
+
+## Check for bad memory specification, strip optional "GB"
+#if($defaultm == no && !($MEMORY =~ ??? )) then
+#  echo "vectorize: ERROR: --memory option must be numeric"
+#endif 
+## stop if memory * 36 > 109 on cheyenne or memory > 1500 on casper
 
 
 ## if not specified, set environment based on queue
@@ -152,6 +159,66 @@ else
 endif
 
 
+## figure out how many jobs and split up commandfiles accordingly
+
+if ($QUEUE == share) then
+  ## run commandfile in serial as a single job
+
+  set NJOBS = 1
+
+  mkdir $dir/01
+  cp $1 $dir/01/cmd
+
+else if ($QUEUE == casper) then 
+  ## one job per task; split commandfile into single lines
+
+  set NJOBS = `cat $CMDFILE | wc -l`
+
+  ## repeated code, should refactor...
+  set ndigits = `echo -n $NJOBS | wc -c | sed -e 's/$/\n2/' | sort | tail -1`
+  split --numeric-suffix=1 -a $ndigits -l1 $1 $dir/cmd.  
+  foreach i (`seq -w 01 $NJOBS`)
+    mkdir $dir/$i
+    mv $dir/cmd.$i $dir/$i/cmd
+  end
+  unset ndigits
+
+else
+  ## on cheyenne
+
+  set ntasks = `cat $CMDFILE | wc -l`
+
+  if ($defaultm == yes) then
+    ## no memory requirement = use all 36 CPUs / node
+    set NJOBS = `perl -w -e "use POSIX; print ceil($ntasks/36)"`
+  else
+    ## normal nodes have up to 45 GB memory, large nodes have up to 109 GB
+    ## (available of 64 and 128 GB, respectively)
+    set taskspernode = `perl -w -e "use POSIX; print floor(109/$MEMORY)`
+#    if ($taskspernode < 18) then
+#      echo "vectorize: ERROR: less than 50% node utilization; use [flag] to override"
+#      exit 1
+#    endif
+    set NJOBS = `perl -e -w "use POSIX; print(ceil($ntasks/$taskspernode))`
+    unset taskspernode
+  endif
+  unset ntasks
+
+  set ndigits = `echo -n $NJOBS | wc -c | sed -e 's/$/\n2/' | sort | tail -1`
+  split --numeric-suffix=1 -a $ndigits -nl/$NJOBS $1 $dir/cmd.
+  foreach i (`seq -w 01 $NJOBS`)
+    mkdir $dir/$i
+    mv $dir/cmd.$i $dir/$i/cmd
+  end
+  unset ndigits
+
+endif
+
+#### HERE!  Splitting has been done, need to loop over NJOBS subdirs
+
+
+
+
 ## setup
 
 if (! $?JOBNAME ) then
@@ -164,6 +231,7 @@ set ERRFILE = $dir/err
 set pbsfile = $dir/pbs
 
 
+
 ## commands need to be wrapped in a shell invocation for MPMD
 ## but not for running in share queue or on casper
 
@@ -174,9 +242,25 @@ else
 endif
 
 
+# if ($serial == yes) then
+# 
+#   if ($defaultm == no) then
+#     set memstring = ":mem=${MEMORY}GB"
+#   else
+#     set memstring = ""
+#   endif
+# 
+#   cat <<EOSERIAL >> $pbsfile
+# # CPU resource request for serial job in shared queue
+# #PBS -l select=1:ncpus=1$memstring
+# EOSERIAL
+# 
+# else
+
+
 ## create PBS batch script
 
-cat <<EOPBSHEAD > $pbsfile
+cat <<EOF > $pbsfile
 #!/bin/tcsh
 
 ##### parameters for PBS scheduling via qsub
@@ -200,28 +284,6 @@ cat <<EOPBSHEAD > $pbsfile
 # runtime limit
 #PBS -l walltime=$WALLTIME
 
-EOPBSHEAD
-
-# if ($serial == yes) then
-# 
-#   if ($defaultm == no) then
-#     set memstring = ":mem=${MEMORY}GB"
-#   else
-#     set memstring = ""
-#   endif
-# 
-#   cat <<EOSERIAL >> $pbsfile
-# # CPU resource request for serial job in shared queue
-# #PBS -l select=1:ncpus=1$memstring
-# EOSERIAL
-# 
-# else
-
-set NTASK = `cat $CMDFILE | wc -l`
-set NNODE = `perl -w -e "use POSIX; print ceil($NTASK/36)"`
-set NCPUS = `perl -w -e "use POSIX; print ceil($NTASK/$NNODE)"`
-
-  cat <<EOPARALLEL >> $pbsfile
 # CPU resource request
 # ntask = number of lines in file [$NTASK]
 # nnode = ceiling(ntask / 36)     [$NNODE]
@@ -231,15 +293,11 @@ set NCPUS = `perl -w -e "use POSIX; print ceil($NTASK/$NNODE)"`
 # mpiprocs: matches ncpus (1 process per CPU)
 # ompthreads: always set to 1 (1 thread per process)
 #PBS -l select=${NNODE}:ncpus=${NCPUS}:mpiprocs=${NCPUS}:ompthreads=1
-EOPARALLEL
-
-
-  cat <<EOPBSMID >> $pbsfile
 
 setenv TMPDIR /glade/scratch/$USER/vectemp
 mkdir -p $TMPDIR
 
-EOPBSMID
+EOF
 
 cat $env >> $pbsfile
 
