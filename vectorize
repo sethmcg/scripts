@@ -228,16 +228,12 @@ unset ndigits
 ## setup
 
 if (! $?JOBNAME ) then
-  set jobbase = `basename $1 .txt`
-else
-  seth jobbase = $JOBNAME
+  set JOBNAME = `basename $1 .txt`
 endif
-# todo: cleanup jobbase / jobname
 
 
 foreach j ($jobs)
 
-set JOBNAME = $jobbase.$j
 set CMDFILE = $dir/$j/cmd
 set OUTFILE = $dir/$j/out
 set ERRFILE = $dir/$j/err
@@ -259,7 +255,7 @@ cat <<EOF > $pbsfile
 #PBS -q $QUEUE
 
 # job name
-#PBS -N $JOBNAME
+#PBS -N $JOBNAME.$j
 
 # stdout file
 #PBS -o $OUTFILE
