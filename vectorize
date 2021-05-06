@@ -199,30 +199,27 @@ else
 endif
 
 
-set jobs = `seq -w 01 $NJOBS`
-set ndigits = `echo -n $jobs[1] | wc -c`
-
-## do commandfile copying / splitting / wrapping
-if ($QUEUE == share) then
-  mkdir -p $dir/01
-  cp $1 $dir/01/cmd
-else if ($QUEUE == casper) then 
-  split --numeric-suffix=1 -a $ndigits -l1 $1 $dir/cmd.
-  foreach j ($jobs)
-    mkdir $dir/$j
-    mv $dir/cmd.$j $dir/$j/cmd
-  end
-else
-  split --numeric-suffix=1 -a $ndigits -nl/$NJOBS $1 $dir/cmd.
-  foreach j ($jobs)
-    mkdir $dir/$j
-    sed "s|\(.*\)|bash -c '\1'|g" $dir/cmd.$j > $dir/$j/cmd
-    rm $dir/cmd.$j
-  end
+## This is only because we have to do the rename thing below.
+if ($NJOBS > 999) then
+  echo "vectorize: ERROR: too many jobs ($NJOBS)"
+  exit 1
 endif
 
-unset ndigits
 
+
+mkdir -p $dir
+cp $1 $dir/cmd
+
+if ($QUEUE != share && $QUEUE != casper) then  
+  split --numeric-suffix=1 -nl/$NJOBS $1 $dir/cmd.  
+  ## need to strip leading zeros for PBS job array handling
+  rename cmd.0 cmd. $dir/cmd*
+  rename cmd.0 cmd. $dir/cmd*
+  foreach i ($dir/cmd.*)
+    ## wrap each command in a shell invocation for MPMD
+    sed -i "s|\(.*\)|bash -c '\1'|g" $i 
+  end
+endif
 
 
 ## setup
@@ -232,12 +229,11 @@ if (! $?JOBNAME ) then
 endif
 
 
-foreach j ($jobs)
 
-set CMDFILE = $dir/$j/cmd
-set OUTFILE = $dir/$j/out
-set ERRFILE = $dir/$j/err
-set pbsfile = $dir/$j/pbs
+set CMDFILE = $dir/cmd
+set OUTFILE = $dir/out
+set ERRFILE = $dir/err
+set pbsfile = $dir/pbs
 
 
 ## create PBS batch script
@@ -255,7 +251,7 @@ cat <<EOF > $pbsfile
 #PBS -q $QUEUE
 
 # job name
-#PBS -N $JOBNAME.$j
+#PBS -N $JOBNAME
 
 # stdout file
 #PBS -o $OUTFILE
@@ -276,21 +272,36 @@ cat <<EOF > $pbsfile
 #        will affect which nodes get scheduled
 #PBS -l select=1:ncpus=${NCPUS}:mpiprocs=${NCPUS}:ompthreads=1$memstring
 
+EOF
+
+if($NJOBS > 1) then
+cat <<EOFJOBS >> $pbsfile
+# job array
+#PBS -J 1-$NJOBS
+
+EOFJOBS
+endif
+
+cat <<EOFTMP >> $pbsfile
 setenv TMPDIR /glade/scratch/$USER/vectemp
 mkdir -p $TMPDIR
 
-EOF
+EOFTMP
+
 
 ## add module load commands, etc.
 cat $env >> $pbsfile
+echo "\n" >> $pbsfile
 
 
 ## commands to run cmdfile
-if ($QUEUE == share || $QUEUE == casper) then
+if ($QUEUE == share) then
   echo "sh $CMDFILE" >> $pbsfile
+else if ($QUEUE == casper) then 
+  echo 'sed -n "$PBS_ARRAY_INDEX,$PBS_ARRAY_INDEX"p '$CMDFILE' | bash' >> $pbsfile
 else
-  echo "setenv MPI_SHEPHERD true" >> $pbsfile
-  echo "mpiexec_mpt -n $NCPUS launch_cf.sh $CMDFILE" >> $pbsfile
+  echo 'setenv MPI_SHEPHERD true' >> $pbsfile
+  echo 'mpiexec_mpt -n '$NCPUS' launch_cf.sh '$CMDFILE'.$PBS_ARRAY_INDEX' >> $pbsfile
 endif
 
 
@@ -303,8 +314,6 @@ if($submit == yes) then
     qsub $pbsfile
   endif
 endif
-
-end
 
 exit 0
 
