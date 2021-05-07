@@ -1,12 +1,12 @@
 #!/bin/tcsh -f
 
 ## given a file of commands (one command per line), runs them in
-## parallel on cheyenne using commandfile MPMD approach
+## parallel on NCAR machines using MPMD approach
 
 set defaultq = yes
 set help = no
 set submit = yes
-set QUEUE = economy
+set QUEUE = casper
 set defaulte = yes
 set defaultm = yes
 set memory = no
@@ -95,23 +95,85 @@ endif
 
 if($help == yes || $PROJECT == none || $#argv != 1) then
   cat <<EOUSAGE
-Usage: vectorize [-d dir] [-h] [-j jobname] [-n] [-p project] [-q queue] [-w walltime] cmdfile
+Usage: vectorize [-d dir] [-e env] [-h] [-j jobname] [-m mem] [-n] [-p proj] [-q queue] [-w walltime] cmdfile
   -d, --dir:       directory for output; defaults to \`mktemp -d\`
   -e, --env:       environment file; defaults to ~/.vectorize/<queue>
-  -h, --help:      prints this help message
-  -j, --jobname:   qsub jobname; defaults to `basename cmdfile .txt`
+  -h, --help:      prints this usage message and exit
+  -j, --jobname:   PBS jobname; defaults to `basename cmdfile .txt`
   -m, --memory:    memory needed per task in GB
   -n, --nosub:     don't submit job, just set everything up
   -p, --project:   project code; defaults to PROJECT envariable (if set)
-  -q, --queue:     queue to submit to; defaults to 'economy'
+  -q, --queue:     queue to submit to; defaults to 'casper'
   -w, --walltime:  wallclock limit for job; defaults to 00:10:00
   cmdfile: a file with one command per line, to be run in parallel
 
-  vectorize is a utility for running many independent single-threaded
-  commands in parallel on cheyenne using MPDP parallelism.
+Vectorize is a utility for running many independent single-threaded
+commands in parallel on casper or cheyenne using MPMD parallelism.
+
+Given a file with one command (task) per line, it builds a PBS job
+script that will run each command on a separate processor and submits
+it to the scheduler.  If you only want the PBS script, use the --nosub
+flag to set everything up without submitting the job.  You can also
+use --nosub to build a job to be submitted as dependent on another
+job.
+
+Stdout and stderr from the tasks are captured in dir/out and dir/err,
+respectively.  NOTE: currently this doesn't work correctly on
+cheyenne; the tasks will all run (I believe), but only a single nodes'
+worth of output is captured.  The commandfile and the PBS job script
+are also stored in dir as dir/cmd and dir/pbs, respectively.
+
+To allow customizaton of the environment that the jobs run in, the
+contents of the environment file are inserted directly into the PBS
+job script.  Put any commands like "module load" in an environment
+file.  The default environment file is ~/.vectorize/<queue>.  Note
+that the PBS job script is written in tcsh.
+
+On the share queue, commandfile is run in serial on a single
+processor.  On casper, the commandfile is split into one job per
+command and run using a job array.  On cheyenne, vectorize will figure
+out how many nods your job needs, splitting them up as evenly as
+possible while making sure that the total memory requirements (if
+specified) don't exceed the node capacity.  It will warn you if the
+job will only fit on large-memory nodes, and won't create a job that
+has less than 40% (15/36) utilization of the CPUs on the node.
+
+Note that tasks running on casper and the share queue are piped as-is
+through 'sh' to run; tasks running on cheyenne have to be wrapped in a
+bash invocation, like so: 
+bash -c '<task>'
+
+If you need to delete a job that uses a job array, note that the
+square brackets are part of the job id.
+
 EOUSAGE
   exit 1
 endif
+
+
+#### FIXME ####
+
+## The job array approach doesn't mix well with MPMD, because using a
+## job array requires a single output file, but when the jobs are
+## running on multiple nodes, everything runs (I think) but you only
+## end up with output from a single node (as best I can tell.)  Which
+## is to say, this new version works on casper and the share queue,
+## but not on cheyenne.
+
+## The solution is to create a subdirectory for each node, split the
+## commandfile into pieces (one for each node, which we're doing
+## already), and then recursively call the script again on each of the
+## splits.  This shouldn't be too bad to implement, but I don't have
+## time to deal with it right now, because while it seems pretty
+## straightforward, if I hit any speedpumps it could extend much
+## longer than the time I have available.  So I'm putting this on hold
+## for now.
+
+if ($QUEUE != "casper" && $QUEUE != "share") then
+echo "vectorize: WARNING: running on cheyenne should work, but output is not captured properly."
+echo "You will probably only get output from one node.  Proceed with caution."
+endif
+
 
 
 ## bail out early if no command file
