@@ -9,7 +9,6 @@ set submit = yes
 set QUEUE = economy
 set defaulte = yes
 set defaultm = yes
-# set MEMORY = 2G
 set memory = no
 set WALLTIME = 00:10:00
 
@@ -114,6 +113,7 @@ EOUSAGE
   exit 1
 endif
 
+
 ## bail out early if no command file
 
 if (-z $1) then
@@ -126,13 +126,42 @@ if (! -e $1) then
 endif
 
 
-## Check for bad memory specification, strip optional "GB"
-#if($defaultm == no && !($MEMORY =~ ??? )) then
-#  echo "vectorize: ERROR: --memory option must be numeric"
-#endif 
-## stop if memory * 36 > 109 on cheyenne or memory > 1500 on casper
-# set memstring=:memory=$MEMORY
+## set memstring for resource request, checking for bad memory specification
 set memstring = ''
+if($defaultm == no) then
+  if ($MEMORY !~ ^[0-9.]+$ ) then
+    echo "vectorize: ERROR: --memory option must be numeric"
+    exit 1
+  endif
+
+  if ($QUEUE == casper) then
+    ## max memory on casper ~= 1.5 TB
+    set memstring = `perl -e "print($MEMORY>1500?'bad':':mem=' . $MEMORY . 'GB')"`
+  else if ($QUEUE == share) then
+    ## max available memory on share = 109 GB; warn if asking for more than half
+    set memstring = `perl -e "print($MEMORY>109 ? 'bad' : ':mem=' . $MEMORY . 'GB')"`
+    if ($memstring != bad) then
+      set warning = '"vectorize: WARNING: requesting more than half the available memory on share queue nodes\n"'
+      perl -e "if($MEMORY > 109/2){print STDOUT $warning}"
+    endif
+  else
+    ## 3 GB = 45 GB / 15 CPU = max memory @ 40% utilization on std cheyenne nodes 
+    ## 7.27 = 109 GB / 15 CPU = max memory @ 40% util on large-memory nodes 
+    set memstring = `perl -e "print($MEMORY>109/15 ? 'bad' : ':mem=' . $MEMORY . 'GB')"`
+    if ($memstring != bad) then
+      set warning = '"vectorize: WARNING: job will only fit on large-memory nodes\n"'
+      perl -e "if($MEMORY > 3){print STDOUT $warning}"
+    endif
+  endif
+  if ($memstring == bad) then
+    echo "vectorize: ERROR: memory request ($MEMORY GB) exceeds available resources for queue $QUEUE"
+    echo "(casper: 1500 GB;  share: 109 GB;  cheyenne: 7.26 GB/CPU @ 40% utilization)"
+    exit 1
+  endif
+endif 
+
+
+
 
 
 ## if not specified, set environment based on queue
@@ -173,6 +202,7 @@ endif
 
 ## use `cat cmdfile | wc` instead of `wc cmdfile` to drop filename
 
+set NNODES = 1
 if ($QUEUE == share) then
   set NJOBS = 1
   set NCPUS = 1
@@ -184,17 +214,15 @@ else if ($QUEUE == casper) then
 else
   set ntasks = `cat $1 | wc -l`
   if ($defaultm == yes) then
-    set NJOBS = `perl -w -e "use POSIX; print ceil($ntasks/36)"`
+    set NJOBS = `perl -e "use POSIX; print ceil($ntasks/36)"`
     set NCPUS = 36
 
   else
-    set NCPUS = `perl -w -e "use POSIX; print floor(109/$MEMORY)`
-#    if ($NCPUS < 18) then
-#      echo "vectorize: ERROR: less than 50% node utilization; use -f [?] to override"
-#      exit 1
-#    endif
-    set NJOBS = `perl -e -w "use POSIX; print(ceil($ntasks/$NCPUS))`
+    set NCPUS = `perl -e "use POSIX; print floor(109/$MEMORY)"`
+    set NJOBS = `perl -e "use POSIX; print(ceil($ntasks/$NCPUS))"`
+
   endif
+  set NNODES = $NJOBS
   unset ntasks
 endif
 
@@ -206,19 +234,18 @@ if ($NJOBS > 999) then
 endif
 
 
-
 mkdir -p $dir
 cp $1 $dir/cmd
 
 if ($QUEUE != share && $QUEUE != casper) then  
-  split --numeric-suffix=1 -nl/$NJOBS $1 $dir/cmd.  
-  ## need to strip leading zeros for PBS job array handling
-  rename cmd.0 cmd. $dir/cmd*
-  rename cmd.0 cmd. $dir/cmd*
-  foreach i ($dir/cmd.*)
-    ## wrap each command in a shell invocation for MPMD
-    sed -i "s|\(.*\)|bash -c '\1'|g" $i 
-  end
+  ## wrap each command in a shell invocation for MPMD
+  sed -i "s|\(.*\)|bash -c '\1'|g" $dir/cmd 
+  if($NJOBS > 1) then
+    split --numeric-suffix=1 -nl/$NJOBS $1 $dir/cmd.  
+    ## need to strip leading zeros for PBS job array handling
+    rename cmd.0 cmd. $dir/cmd*
+    rename cmd.0 cmd. $dir/cmd*
+  endif
 endif
 
 
@@ -263,14 +290,14 @@ cat <<EOF > $pbsfile
 #PBS -l walltime=$WALLTIME
 
 # resource request
-# select: num nodes (always 1)
+# select: num nodes
 # ncpus: num cpus per node to use for this job
 #        (36 for cheyenne, 1 for share or casper)
 # mpiprocs: matches ncpus (i.e., 1 process per CPU)
 # ompthreads: num threads per process (always 1)
 # memory (if set): memory required per cpu
 #        will affect which nodes get scheduled
-#PBS -l select=1:ncpus=${NCPUS}:mpiprocs=${NCPUS}:ompthreads=1$memstring
+#PBS -l select=${NNODES}:ncpus=${NCPUS}:mpiprocs=${NCPUS}:ompthreads=1$memstring
 
 EOF
 
@@ -301,7 +328,11 @@ else if ($QUEUE == casper) then
   echo 'sed -n "$PBS_ARRAY_INDEX,$PBS_ARRAY_INDEX"p '$CMDFILE' | bash' >> $pbsfile
 else
   echo 'setenv MPI_SHEPHERD true' >> $pbsfile
-  echo 'mpiexec_mpt -n '$NCPUS' launch_cf.sh '$CMDFILE'.$PBS_ARRAY_INDEX' >> $pbsfile
+  if ($NJOBS > 1) then
+    echo 'mpiexec_mpt -n '$NCPUS' launch_cf.sh '$CMDFILE'.$PBS_ARRAY_INDEX' >> $pbsfile
+  else 
+    echo 'mpiexec_mpt -n '$NCPUS' launch_cf.sh '$CMDFILE >> $pbsfile
+  endif
 endif
 
 
