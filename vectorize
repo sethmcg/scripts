@@ -18,7 +18,7 @@ set WALLTIME = 00:10:00
 # Use a temp variable b/c eval nukes getopt return value.  ':q' copies
 # argv list w/ no substitutions
 
-set temp=(`getopt -a -n vectorize -s tcsh -o d:e:ghj:m:np:q:sw: --long dir:,env:,help,nosub,memory:,project:,queue:,walltime: -- $argv:q`)
+set temp=(`getopt -a -n vectorize -s tcsh -o d:e:hj:m:np:q:w: --long dir:,env:,help,jobname:,memory:,nosub,project:,queue:,walltime: -- $argv:q`)
 if ($? != 0) then
   echo "Terminating..." >/dev/stderr
   exit 1
