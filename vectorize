@@ -290,7 +290,7 @@ endif
 
 
 ## This is only because we have to do the rename thing below.
-if ($NJOBS > 999) then
+if ($NJOBS > 999 && $QUEUE != "casper") then
   echo "vectorize: ERROR: too many jobs ($NJOBS)"
   exit 1
 endif
