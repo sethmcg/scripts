@@ -291,7 +291,7 @@ endif
 
 
 ## This is only because we have to do the rename thing below.
-if ($NJOBS > 999 && $QUEUE != "casper") then
+if ($NJOBS > 999) then
   echo "vectorize: ERROR: too many jobs ($NJOBS)"
   exit 1
 endif
@@ -303,12 +303,12 @@ cp $1 $dir/cmd
 if ($QUEUE != share && $QUEUE != casper) then  
   ## wrap each command in a shell invocation for MPMD
   sed -i "s|\(.*\)|bash -c '\1'|g" $dir/cmd 
-  if($NJOBS > 1) then
-    split --numeric-suffix=1 -nl/$NJOBS $1 $dir/cmd.  
-    ## need to strip leading zeros for PBS job array handling
-    rename cmd.0 cmd. $dir/cmd*
-    rename cmd.0 cmd. $dir/cmd*
-  endif
+endif
+if($NJOBS > 1 && $QUEUE != share) then
+  split --numeric-suffix=1 -nl/$NJOBS $1 $dir/cmd.  
+  ## need to strip leading zeros for PBS job array handling
+  rename cmd.0 cmd. $dir/cmd*
+  rename cmd.0 cmd. $dir/cmd*
 endif
 
 
@@ -386,10 +386,13 @@ echo "\n" >> $pbsfile
 
 ## commands to run cmdfile
 if ($QUEUE == share) then
-#  echo "sh $CMDFILE" >> $pbsfile
   echo $SHELL $CMDFILE >> $pbsfile
 else if ($QUEUE == casper) then 
-  echo 'sed -n "$PBS_ARRAY_INDEX,$PBS_ARRAY_INDEX"p '$CMDFILE' | '$SHELL >> $pbsfile
+  if ($NJOBS > 1) then
+    echo $SHEL $CMDFILE.'.$PBS_ARRAY_INDEX' >> pbsfile
+  else
+    echo $SHELL $CMDFILE >> $pbsfile
+  endif
 else
   echo 'setenv MPI_SHEPHERD true' >> $pbsfile
   if ($NJOBS > 1) then
