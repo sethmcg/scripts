@@ -140,8 +140,8 @@ job will only fit on large-memory nodes, and won't create a job that
 has less than 40% (15/36) utilization of the CPUs on the node.
 
 Note that tasks running on casper and the share queue are piped as-is
-through 'sh' to run; tasks running on cheyenne have to be wrapped in a
-bash invocation, like so: 
+through the user's default shell (\$SHELL) to run; tasks running on
+cheyenne have to be wrapped in a bash invocation, like so: 
 bash -c '<task>'
 
 If you need to delete a job that uses a job array, note that the
@@ -386,9 +386,10 @@ echo "\n" >> $pbsfile
 
 ## commands to run cmdfile
 if ($QUEUE == share) then
-  echo "sh $CMDFILE" >> $pbsfile
+#  echo "sh $CMDFILE" >> $pbsfile
+  echo $SHELL $CMDFILE >> $pbsfile
 else if ($QUEUE == casper) then 
-  echo 'sed -n "$PBS_ARRAY_INDEX,$PBS_ARRAY_INDEX"p '$CMDFILE' | bash' >> $pbsfile
+  echo 'sed -n "$PBS_ARRAY_INDEX,$PBS_ARRAY_INDEX"p '$CMDFILE' | '$SHELL >> $pbsfile
 else
   echo 'setenv MPI_SHEPHERD true' >> $pbsfile
   if ($NJOBS > 1) then
