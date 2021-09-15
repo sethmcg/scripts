@@ -389,7 +389,7 @@ if ($QUEUE == share) then
   echo $SHELL $CMDFILE >> $pbsfile
 else if ($QUEUE == casper) then 
   if ($NJOBS > 1) then
-    echo $SHEL $CMDFILE.'.$PBS_ARRAY_INDEX' >> pbsfile
+    echo $SHELL $CMDFILE'.$PBS_ARRAY_INDEX' >> $pbsfile
   else
     echo $SHELL $CMDFILE >> $pbsfile
   endif
