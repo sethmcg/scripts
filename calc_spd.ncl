@@ -4,13 +4,24 @@ load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
 
-;; The following variables should be specified as command-line arguments
-;; e.g.: ncl file=\"$file\" script.ncl
 
-;ufile = "uas_CRCM_2001010103.nc"
-;vfile = "vas_CRCM_2001010103.nc"
+;;; Usage: Invoke using nclwrap or via command line like so: 
+;;; ncl -x arg=\"value\" [etc.] script.ncl
+;;;
+;;; Mandatory command-line arguments:
+;;; ufile (netcdf file with data variable 'uas'
+;;; vfile (netcdf file with data variable 'vas'
+;;; outfile (name of netcdf file to write output to)
+;;;    other variables & global attributes are copied from ufile
+;;;
+;;; optional command-line arguments:
+;;; vname (name of output variable, defaults to 'spd')
 
-;outfile = "spd_CRCM_2001010103.nc"
+
+;; Default name for output variable
+if(.not. isvar("vname")) then
+  vname = "spd"
+end if
 
 
 finu = addfile(ufile, "r")
@@ -29,10 +40,13 @@ do i = 0,dimsizes(att_names)-1
   if(att_names(i) .eq. "history_of_appended_files") then
     ;; skip
   else if(att_names(i) .eq. "title") then
-    fout@title = str_sub_str(finu@title, "10m Eastward Wind Velocity", "Near-Surface Wind Speed")
-  else
-    fout@$att_names(i)$ = fin@$att_names(i)$
-  end if
+    title = str_sub_str(finu@title, "Velocity","Speed")
+    title = str_sub_str(title, "Eastward","")
+    title = str_sub_str(title, "Northward","")
+    title = str_sub_str(title, "  "," ")
+    fout@title = title
+  else 
+    fout@$att_names(i)$ = finu@$att_names(i)$
   end if
 end do
 
@@ -56,7 +70,7 @@ end if
 end do
 
 ; calculate wind speed
-; note: roundabout approach necessary to avoid memory ceiling...
+; roundabout looping approach taken to reduce memory usage
 
 ;;spd = finu->uas
 ;;tmp = finv->vas
@@ -99,7 +113,8 @@ do i = 0,dimsizes(varatts)-1
   end if
 end do
 
-fout->spd = spd
+;fout->spd = spd
+fout->$vname$ = spd
 
 exit
 
