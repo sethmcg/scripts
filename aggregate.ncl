@@ -33,6 +33,64 @@ begin
 end
 
 
+;; string-generating functions for 'frequency' and 'title' global attributes.
+;; localized into functions to simplify code and make it easy to test
+
+function freqatt(interval, cyclic)
+begin
+  if(cyclic) then
+    if (interval .eq. "month") then
+      result = "ymon"
+    elseif (interval .eq. "season") then
+      result = "yseas"
+    else
+      print("freqatt() error: Invalid cyclic interval: "+interval)
+      exit
+    end if
+  else
+    if(interval .eq. "day") then
+      result = "day"
+    elseif (interval .eq. "year") then
+      result = "ann"
+    elseif (interval .eq. "month") then
+      result = "mon"
+    elseif (interval .eq. "season") then
+      result = "sem"
+    else
+      print("freqatt() error: unrecognized interval: "+interval)
+     exit
+    end if
+  end if
+  return(result)
+end
+
+
+function titleatt(title, interval, cyclic)
+begin
+  if (cyclic) then
+    tail = "Climatology of"
+  else
+    tail = "Mean"
+  end if
+
+  if (interval .eq. "year") then
+    head = "Annual"
+  elseif (interval .eq. "month") then
+    head = "Monthly"
+  elseif (interval .eq. "season") then
+    head = "Seasonal"
+  elseif (interval .eq. "day") then
+    head = "Daily"
+  else
+    print("freqatt() error: unrecognized interval: "+interval)
+    exit
+  end if
+
+  result = str_sub_str(title, "Daily Mean", head+" "+tail)
+  return(result)
+end
+
+
 ;;  For converting times to dates
 
 format = "%Y-%N-%D %H:%M:%S"
@@ -416,7 +474,13 @@ if (verbose) then print("Copying other variables from input") end if
 att_names = getvaratts(fin) 
 
 do i = 0,dimsizes(att_names)-1
-  fout@$att_names(i)$ = fin@$att_names(i)$
+  if (att_names(i) .eq. "frequency") then
+    fout@frequency = freqatt(interval, cyclic)
+  elseif (att_names(i) .eq. "title") then
+    fout@title = titleatt(fin@title, interval, cyclic)
+  else 
+    fout@$att_names(i)$ = fin@$att_names(i)$
+  end if
 end do
 
 ;; copy over other variables
