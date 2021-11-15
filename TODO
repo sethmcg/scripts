@@ -1,0 +1,26 @@
+TODO:
+
+Unify calc_*ncl scripts:
+
+0) Set up test files - one each of inputs & outputs generated using
+   old code to compare.  Short & small - just a few timesteps &
+   gridcells, enough that dump to text isn't very big.
+
+1) Divide code up into sections with big markers & better comments
+
+2) Define a standard set of variables names & mapping to longname
+
+3) Change input: user provides what's being calculated, a template
+   infile, the variable in the template, and an outfile.  Optional:
+   overrides for variable names if they're not standard.  Template
+   file is what gets used as template for output; template filename is
+   what gets used to construct all the other infile names.
+
+4) Figure out how to get NCL to do something like
+   fin <- lapply(list(tas=tfile, huss=hfile, ps=pfile), nc_ingest)
+
+5) Change input & output to use all this stuff
+
+6) Put all the calculation bits into a big switch statement in the
+   middle.
+
