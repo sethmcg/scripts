@@ -105,7 +105,11 @@ do i = 0,dimsizes(att_names)-1
   if(att_names(i) .eq. "history_of_appended_files") then
     ;; skip
   else if(att_names(i) .eq. "title") then
-    fout@title = str_sub_str(fint@title, "Temperature", "Relative Humidity")
+    if (dewpt) then
+      fout@title = str_sub_str(fint@title, "2m Temperature", "Dew Point Temperature")
+    else
+      fout@title = str_sub_str(fint@title, "2m Temperature", "Near-Surface Relative Humidity")
+    end if
   else
     fout@$att_names(i)$ = fint@$att_names(i)$
   end if

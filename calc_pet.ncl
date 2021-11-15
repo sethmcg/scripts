@@ -93,12 +93,19 @@ fout = addfile(outfile, "c")
 filedimdef(fout,"time",-1,True)  ;; make time dimension unlimited
 
 
-; copy/set global attributes
+;; copy/set global attributes - note fin is tasfile
 
 att_names = getvaratts(fin) 
 
 do i = 0,dimsizes(att_names)-1
-  fout@$att_names(i)$ = fin@$att_names(i)$
+  if(att_names(i) .eq. "history_of_appended_files") then
+    ;; skip
+  else if(att_names(i) .eq. "title") then
+    fout@title = str_sub_str(fin@title, "2m Temperature", "Potential Evapotranspiration")
+  else
+    fout@$att_names(i)$ = fin@$att_names(i)$
+  end if
+  end if
 end do
 
 history = "Created " + systemfunc("date") + " by "+systemfunc("whoami")+"@"+systemfunc("hostname")+" using NCL script calc_pet.ncl from input files [dewpt hurs ps rlds rlus rsds rsus sfcWind tas]"+fname

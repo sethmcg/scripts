@@ -38,8 +38,16 @@ filedimdef(fout,"time",-1,True)  ;; make time dimension unlimited
 att_names = getvaratts(fint) 
 
 do i = 0,dimsizes(att_names)-1
-  fout@$att_names(i)$ = fint@$att_names(i)$
+  if(att_names(i) .eq. "history_of_appended_files") then
+    ;; skip
+  else if(att_names(i) .eq. "title") then
+    fout@title = str_sub_str(fint@title, "2m Temperature", "NWS Heat Index")
+  else
+    fout@$att_names(i)$ = fint@$att_names(i)$
+  end if
+  end if
 end do
+
 
 ;; To track the full history of the file, we need histories of all
 ;; the ancestors.

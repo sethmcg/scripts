@@ -28,17 +28,26 @@ foutd = addfile(dewptfile, "c")
 filedimdef(fouth,"time",-1,True)  ;; make time dimension unlimited
 filedimdef(foutd,"time",-1,True)  ;; make time dimension unlimited
 
-;; use tas as template, since it has a reference height
+;; use tfile as template, since it has a reference height
 
-; global attributes
+;; copy global attributes
 
 
 att_names = getvaratts(fint) 
 
 do i = 0,dimsizes(att_names)-1
-  fouth@$att_names(i)$ = fint@$att_names(i)$
-  foutd@$att_names(i)$ = fint@$att_names(i)$
+  if(att_names(i) .eq. "history_of_appended_files") then
+    ;; skip
+  else if(att_names(i) .eq. "title") then
+    fouth@title = str_sub_str(fint@title, "Temperature", "Relative Humidity")
+    fouth@title = str_sub_str(fint@title, "Temperature", "Dew Point Temperature")
+  else
+    fouth@$att_names(i)$ = fint@$att_names(i)$
+    foutd@$att_names(i)$ = fint@$att_names(i)$
+  end if
+  end if
 end do
+
 
 
 ;; To track the full history of the file, we need histories of all

@@ -25,8 +25,16 @@ filedimdef(fout,"time",-1,True)  ;; make time dimension unlimited
 att_names = getvaratts(finu) 
 
 do i = 0,dimsizes(att_names)-1
-  fout@$att_names(i)$ = finu@$att_names(i)$
+  if(att_names(i) .eq. "history_of_appended_files") then
+    ;; skip
+  else if(att_names(i) .eq. "title") then
+    fout@title = str_sub_str(finu@title, "10m Eastward Wind Velocity", "Near-Surface Wind Direction")
+  else
+    fout@$att_names(i)$ = fin@$att_names(i)$
+  end if
+  end if
 end do
+
 
 history = "Created " + systemfunc("date") + " by "+systemfunc("whoami")+"@"+systemfunc("hostname")+" using NCL script from source files "+ufile+" and "+vfile
 
@@ -69,7 +77,7 @@ end do
 
 dir@units = "degrees"
 dir@units_convention = "degrees clockwise from north"
-dir@long_name = "10-meter Wind Direction"
+dir@long_name = "Near-Surface Wind Direction"
 dir@standard_name = "wind_from_direction"
 
 fout->dir = dir
