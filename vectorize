@@ -1,18 +1,15 @@
 #!/bin/tcsh -f
 
 ## given a file of commands (one command per line), runs them in
-## parallel on cheyenne using commandfile MPMD approach
+## parallel on NCAR machines using MPMD approach
 
 set defaultq = yes
-set fold = 1
-set geyser = no
 set help = no
 set submit = yes
-set QUEUE = economy
+set QUEUE = casper
+set defaulte = yes
 set defaultm = yes
-# set MEMORY = 2G
 set memory = no
-set serial = no
 set WALLTIME = 00:10:00
 
 
@@ -21,7 +18,7 @@ set WALLTIME = 00:10:00
 # Use a temp variable b/c eval nukes getopt return value.  ':q' copies
 # argv list w/ no substitutions
 
-set temp=(`getopt -a -n vectorize -s tcsh -o d:f:ghj:m:np:q:sw: --long dir:,fold:,geyser,help,nosub,memory:,project:,queue:,serial,walltime: -- $argv:q`)
+set temp=(`getopt -a -n vectorize -s tcsh -o d:e:hj:m:np:q:w: --long dir:,env:,help,jobname:,memory:,nosub,project:,queue:,walltime: -- $argv:q`)
 if ($? != 0) then
   echo "Terminating..." >/dev/stderr
   exit 1
@@ -38,15 +35,13 @@ while (1)
   case --dir:
     set dir = $2:q ; shift ; shift
     breaksw;
-  case -f:
-  case --fold:
-    set fold = $2:q ; shift ; shift
+  case -e:
+  case --env:
+    set defaulte = no
+    set env = $2:q ; shift ; shift
     breaksw;
-  case -g:
-  case --geyser:
-    set geyser = yes ; shift
-    breaksw
   case -h:
+  case --help:
     set help = yes ; shift
     breaksw
   case -j:
@@ -71,10 +66,6 @@ while (1)
     set defaultq = no
     set QUEUE = $2:q ; shift ; shift
     breaksw;
-  case -s:
-  case --serial:
-    set serial = yes ; shift
-    breaksw 
   case -w:
   case --walltime:
     set WALLTIME = $2:q ; shift ; shift
@@ -87,6 +78,8 @@ while (1)
     endsw
 end
 
+
+## Check for bad arguments, print usage message
 
 if(! $?PROJECT) then
   set PROJECT = none
@@ -103,25 +96,86 @@ endif
 
 if($help == yes || $PROJECT == none || $#argv != 1) then
   cat <<EOUSAGE
-Usage: vectorize [-d dir] [-h] [-j jobname] [-n] [-p project] [-q queue] [-w walltime] cmdfile
+Usage: vectorize [-d dir] [-e env] [-h] [-j jobname] [-m mem] [-n] [-p proj] [-q queue] [-w walltime] cmdfile
   -d, --dir:       directory for output; defaults to \`mktemp -d\`
-  -f, --fold:      number of commands to fold together (run in serial per core)
-  -g, --geyser:    runs in serial on geyser instead (ignores -q, -s)
-  -h, --help:      prints this help message
-  -j, --jobname:   qsub jobname; defaults to `basename cmdfile .txt`
-  -m, --memory:    memory needed in GB (only useful with -s or -q)
+  -e, --env:       environment file; defaults to ~/.vectorize/<queue>
+  -h, --help:      prints this usage message and exit
+  -j, --jobname:   PBS jobname; defaults to `basename cmdfile .txt`
+  -m, --memory:    memory needed per task in GB
   -n, --nosub:     don't submit job, just set everything up
   -p, --project:   project code; defaults to PROJECT envariable (if set)
-  -q, --queue:     queue to submit to; defaults to economy
-  -s, --serial:    runs in serial on share queue (ignores -q)
+  -q, --queue:     queue to submit to; defaults to 'casper'
   -w, --walltime:  wallclock limit for job; defaults to 00:10:00
   cmdfile: a file with one command per line, to be run in parallel
 
-  vectorize is a utility for running many independent single-threaded
-  commands in parallel on cheyenne using MPDP parallelism.
+Vectorize is a utility for running many independent single-threaded
+commands in parallel on casper or cheyenne using MPMD parallelism.
+
+Given a file with one command (task) per line, it builds a PBS job
+script that will run each command on a separate processor and submits
+it to the scheduler.  If you only want the PBS script, use the --nosub
+flag to set everything up without submitting the job.  You can also
+use --nosub to build a job to be submitted as dependent on another
+job.
+
+Stdout and stderr from the tasks are captured in dir/out and dir/err,
+respectively.  NOTE: currently this doesn't work correctly on
+cheyenne; the tasks will all run (I believe), but only a single nodes'
+worth of output is captured.  The commandfile and the PBS job script
+are also stored in dir as dir/cmd and dir/pbs, respectively.
+
+To allow customizaton of the environment that the jobs run in, the
+contents of the environment file are inserted directly into the PBS
+job script.  Put any commands like "module load" in an environment
+file.  The default environment file is ~/.vectorize/<queue>.  Note
+that the PBS job script is written in tcsh.
+
+On the share queue, commandfile is run in serial on a single
+processor.  On casper, the commandfile is split into one job per
+command and run using a job array.  On cheyenne, vectorize will figure
+out how many nods your job needs, splitting them up as evenly as
+possible while making sure that the total memory requirements (if
+specified) don't exceed the node capacity.  It will warn you if the
+job will only fit on large-memory nodes, and won't create a job that
+has less than 40% (15/36) utilization of the CPUs on the node.
+
+Note that tasks running on casper and the share queue are piped as-is
+through the user's default shell (\$SHELL) to run; tasks running on
+cheyenne have to be wrapped in a bash invocation, like so: 
+bash -c '<task>'
+
+If you need to delete a job that uses a job array, note that the
+square brackets are part of the job id.
+
 EOUSAGE
-exit 1
+  exit 1
 endif
+
+
+#### FIXME ####
+
+## The job array approach doesn't mix well with MPMD, because using a
+## job array requires a single output file, but when the jobs are
+## running on multiple nodes, everything runs (I think) but you only
+## end up with output from a single node (as best I can tell.)  Which
+## is to say, this new version works on casper and the share queue,
+## but not on cheyenne.
+
+## The solution is to create a subdirectory for each node, split the
+## commandfile into pieces (one for each node, which we're doing
+## already), and then recursively call the script again on each of the
+## splits.  This shouldn't be too bad to implement, but I don't have
+## time to deal with it right now, because while it seems pretty
+## straightforward, if I hit any speedpumps it could extend much
+## longer than the time I have available.  So I'm putting this on hold
+## for now.
+
+if ($QUEUE != "casper" && $QUEUE != "share") then
+echo "vectorize: WARNING: running on cheyenne should work, but output is not captured properly."
+echo "You will probably only get output from one node.  Proceed with caution."
+endif
+
+
 
 ## bail out early if no command file
 
@@ -135,39 +189,58 @@ if (! -e $1) then
 endif
 
 
-## test for mutually exclusive flags
+## set memstring for resource request, checking for bad memory specification
+set memstring = ''
+if($defaultm == no) then
+  if ($MEMORY !~ ^[0-9.]+$ ) then
+    echo "vectorize: ERROR: --memory option must be numeric"
+    exit 1
+  endif
 
-if ( $geyser == yes ) then
-  if( $defaultq == no ) then
-    echo "vectorize: WARNING: running in serial on geyser; ignoring user-specified queue ($QUEUE)"
+  if ($QUEUE == casper) then
+    ## max memory on casper ~= 1.5 TB
+    set memstring = `perl -e "print($MEMORY>1500?'bad':':mem=' . $MEMORY . 'GB')"`
+  else if ($QUEUE == share) then
+    ## max available memory on share = 109 GB; warn if asking for more than half
+    set memstring = `perl -e "print($MEMORY>109 ? 'bad' : ':mem=' . $MEMORY . 'GB')"`
+    if ($memstring != bad) then
+      set warning = '"vectorize: WARNING: requesting more than half the available memory on share queue nodes\n"'
+      perl -e "if($MEMORY > 109/2){print STDOUT $warning}"
+    endif
+  else
+    ## 3 GB = 45 GB / 15 CPU = max memory @ 40% utilization on std cheyenne nodes 
+    ## 7.27 = 109 GB / 15 CPU = max memory @ 40% util on large-memory nodes 
+    set memstring = `perl -e "print($MEMORY>109/15 ? 'bad' : ':mem=' . $MEMORY . 'GB')"`
+    if ($memstring != bad) then
+      set warning = '"vectorize: WARNING: job will only fit on large-memory nodes\n"'
+      perl -e "if($MEMORY > 3){print STDOUT $warning}"
+    endif
   endif
-  if ( $serial == yes ) then
-    echo "vectorize: WARNING: running in serial on geyser; ignoring -s flag"
+  if ($memstring == bad) then
+    echo "vectorize: ERROR: memory request ($MEMORY GB) exceeds available resources for queue $QUEUE"
+    echo "(casper: 1500 GB;  share: 109 GB;  cheyenne: 7.26 GB/CPU @ 40% utilization)"
+    exit 1
   endif
-  if ( $defaultm == yes) then
-    set MEMORY = 2
-  endif
-#else
-#  if ( $MEMORY != 2G ) then
-#    echo "vectorize: WARNING: not running on geyser; ignoring user-specified memory ($MEMORY)"
-#  endif
+endif 
+
+
+
+
+
+## if not specified, set environment based on queue
+if ($defaulte == yes) then
+  set env = "~/.vectorize/$QUEUE"
 endif
 
-if( $defaultm == no) then
-  if ($serial == no && $geyser == no) then
-    echo "vectorize: WARNING: not running in serial or on geyser; ignoring user-specified memory ($MEMORY)"
+if (! -e $env) then
+  if ($defaulte == yes) then
+    echo "vectorize: ERROR: no default environment for queue '$QUEUE'; exiting"
+    echo "To resolve this error, create file ~/.vectorize/$QUEUE containing"
+    echo "any 'module load' commands, etc. needed in the PBS script."
+  else 
+    echo "vectorize: ERROR: no such environment file: '$env'; exiting"
   endif
-endif
-
-
-if ( $serial == yes ) then
-  if( $defaultq == no ) then
-    echo "vectorize: WARNING: running in serial on share queue; ignoring user-specified queue ($QUEUE)"
-  endif
-  if( $fold > 1 ) then
-    echo "vectorize: WARNING: running in serial on share queue; ignoring user-specified folding ($fold)"
-  endif
-  set QUEUE = share
+  exit 1
 endif
 
 
@@ -180,79 +253,83 @@ else
 endif
 
 
+## figure out how many jobs and process commandfiles accordingly
+
+## share: one job, run commandfile as-is
+## casper: one job per task, split commandfile into single lines
+## other: split cmdfile into chunks & wrap in shell invocation for MPMD
+##        no memory requirement = use all 36 CPUs / node
+##        otherwise fill each node as full as possible
+##        normal nodes: ~45 GB memory, large nodes: ~109 GB
+##        (available of 64 and 128 GB, respectively)
+
+## use `cat cmdfile | wc` instead of `wc cmdfile` to drop filename
+
+set NNODES = 1
+if ($QUEUE == share) then
+  set NJOBS = 1
+  set NCPUS = 1
+
+else if ($QUEUE == casper) then 
+  set NJOBS = `cat $1 | wc -l`
+  set NCPUS = 1
+
+else
+  set ntasks = `cat $1 | wc -l`
+  if ($defaultm == yes) then
+    set NJOBS = `perl -e "use POSIX; print ceil($ntasks/36)"`
+    set NCPUS = 36
+
+  else
+    set NCPUS = `perl -e "use POSIX; print floor(109/$MEMORY)"`
+    set NJOBS = `perl -e "use POSIX; print(ceil($ntasks/$NCPUS))"`
+
+  endif
+  set NNODES = $NJOBS
+  unset ntasks
+endif
+
+
+## This is only because we have to do the rename thing below.
+if ($NJOBS > 9999) then
+  echo "vectorize: ERROR: too many jobs ($NJOBS)"
+  exit 1
+endif
+
+
+mkdir -p $dir
+cp $1 $dir/cmd
+
+if ($QUEUE != share && $QUEUE != casper) then  
+  ## wrap each command in a shell invocation for MPMD
+  sed -i "s|\(.*\)|bash -c '\1'|g" $dir/cmd 
+endif
+if($NJOBS > 1 && $QUEUE != share) then
+  split -a 4 --numeric-suffix=1 -nl/$NJOBS $1 $dir/cmd.  
+  ## need to strip leading zeros for PBS job array handling
+  rename cmd.0 cmd. $dir/cmd*
+  rename cmd.0 cmd. $dir/cmd*
+  rename cmd.0 cmd. $dir/cmd*
+endif
+
+
 ## setup
 
 if (! $?JOBNAME ) then
   set JOBNAME = `basename $1 .txt`
 endif
 
+
+
 set CMDFILE = $dir/cmd
 set OUTFILE = $dir/out
 set ERRFILE = $dir/err
-if( $geyser == yes ) then
-  set slurmfile = $dir/slurm
-else
-  set pbsfile = $dir/pbs
-endif
+set pbsfile = $dir/pbs
 
-
-## commands need to be wrapped in a shell invocation for MPMD
-
-if ($serial == yes || $geyser == yes) then
-  cp $1 $CMDFILE
-else 
-  if($fold > 1) then
-    ## "paste - - -" pastes 3 successive lines into one.
-    ## use repeat to get a string of N dashes, then eval to execute
-
-    ## if ncommands is not an integer multiple of nfolds, need to
-    ## stick : (bash no-op) between trailing ;;s at end of folded
-    ## cmdfile to prevent syntax errors (twice to get all of them)
-
-    eval "cat $1 | paste -d \; "`repeat $fold echo -n "- "`| \
-    sed "s|\(.*\)|bash -c '\1'|g" | sed 's/;;/;:;/g' | sed 's/;;/;:;/g' > $CMDFILE
-  else
-    sed "s|\(.*\)|bash -c '\1'|g" $1 > $CMDFILE
-  endif
-endif
-
-
-if ( $geyser == yes ) then
-
-## create slurm batch script
-
-cat <<EOSLURM > $slurmfile
-#!/bin/tcsh
-#SBATCH -J $JOBNAME
-#SBATCH -n 1
-#SBATCH --ntasks-per-node=1
-#SBATCH --mem=${MEMORY}G
-#SBATCH -t $WALLTIME
-#SBATCH -A $PROJECT
-#SBATCH -p dav
-#SBATCH -e $ERRFILE
-#SBATCH -o $OUTFILE
-
-module load R
-module load nco
-module load cdo
-module load ncl
-
-tcsh $CMDFILE
-
-EOSLURM
-
-## submit job (or not)
-
-if($submit == yes) then
-  sbatch $slurmfile
-endif
-
-else
 
 ## create PBS batch script
 
-cat <<EOPBSHEAD > $pbsfile
+cat <<EOF > $pbsfile
 #!/bin/tcsh
 
 ##### parameters for PBS scheduling via qsub
@@ -276,83 +353,68 @@ cat <<EOPBSHEAD > $pbsfile
 # runtime limit
 #PBS -l walltime=$WALLTIME
 
-EOPBSHEAD
+# resource request
+# select: num nodes
+# ncpus: num cpus per node to use for this job
+#        (36 for cheyenne, 1 for share or casper)
+# mpiprocs: matches ncpus (i.e., 1 process per CPU)
+# ompthreads: num threads per process (always 1)
+# memory (if set): memory required per cpu
+#        will affect which nodes get scheduled
+#PBS -l select=${NNODES}:ncpus=${NCPUS}:mpiprocs=${NCPUS}:ompthreads=1$memstring
 
-if ($serial == yes) then
+EOF
 
-  if ($defaultm == no) then
-    set memstring = ":mem=${MEMORY}GB"
-  else
-    set memstring = ""
-  endif
+if($NJOBS > 1) then
+cat <<EOFJOBS >> $pbsfile
+# job array
+#PBS -J 1-$NJOBS
 
-  cat <<EOSERIAL >> $pbsfile
-# CPU resource request for serial job in shared queue
-#PBS -l select=1:ncpus=1$memstring
-EOSERIAL
-
-else
-
-  set NTASK = `cat $CMDFILE | wc -l`
-  set NNODE = `perl -w -e "use POSIX; print ceil($NTASK/36)"`
-  set NCPUS = `perl -w -e "use POSIX; print ceil($NTASK/$NNODE)"`
-
-  cat <<EOPARALLEL >> $pbsfile
-# CPU resource request
-# ntask = number of lines in file [$NTASK]
-# nnode = ceiling(ntask / 36)     [$NNODE]
-# ncpus = ceiling(ntask / nnode)  [$NCPUS]
-# select: number of nodes
-# ncpus: number of cpus per node to use
-# mpiprocs: matches ncpus (1 process per CPU)
-# ompthreads: always set to 1 (1 thread per process)
-#PBS -l select=${NNODE}:ncpus=${NCPUS}:mpiprocs=${NCPUS}:ompthreads=1
-EOPARALLEL
-
+EOFJOBS
 endif
 
-  cat <<EOPBSMID >> $pbsfile
-
-#source /glade/u/apps/opt/lmod/4.2.1/init/tcsh 
-
+cat <<EOFTMP >> $pbsfile
 setenv TMPDIR /glade/scratch/$USER/vectemp
 mkdir -p $TMPDIR
 
-module load R
-module load nco
-module load cdo
-module load ncl
+EOFTMP
 
-EOPBSMID
 
-if ($serial == yes) then
-  cat <<EOSTAIL >> $pbsfile
-bash $CMDFILE
-EOSTAIL
+## add module load commands, etc.
+cat $env >> $pbsfile
+echo "\n" >> $pbsfile
+
+
+## commands to run cmdfile
+if ($QUEUE == share) then
+  echo $SHELL $CMDFILE >> $pbsfile
+else if ($QUEUE == casper) then 
+  if ($NJOBS > 1) then
+    echo $SHELL $CMDFILE'.$PBS_ARRAY_INDEX' >> $pbsfile
+  else
+    echo $SHELL $CMDFILE >> $pbsfile
+  endif
 else
-  cat <<EOPTAIL >> $pbsfile
-setenv MPI_SHEPHERD true
-mpiexec_mpt -n $NTASK launch_cf.sh $CMDFILE
-EOPTAIL
+  echo 'setenv MPI_SHEPHERD true' >> $pbsfile
+  if ($NJOBS > 1) then
+    echo 'mpiexec_mpt -n '$NCPUS' launch_cf.sh '$CMDFILE'.$PBS_ARRAY_INDEX' >> $pbsfile
+  else 
+    echo 'mpiexec_mpt -n '$NCPUS' launch_cf.sh '$CMDFILE >> $pbsfile
+  endif
 endif
 
 
 ## submit job (or not)
 
 if($submit == yes) then
-  qsub $pbsfile
-
-  ## PBS gets hosed if it gets more than about 1 job per second.
-  ## Sleep 1 second so that we don't make things sad when looping over
-  ## many commandfiles.
-
-  sleep 1
-endif
-
+  if ($QUEUE == casper && $NCAR_HOST == cheyenne) then
+    qsubcasper $pbsfile
+  else
+    qsub $pbsfile
+  endif
 endif
 
 exit 0
 
 # Copyright 2018 Univ. Corp. for Atmos. Research
 # Author: Seth McGinnis, mcginnis@ucar.edu
-
