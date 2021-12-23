@@ -373,12 +373,6 @@ cat <<EOFJOBS >> $pbsfile
 EOFJOBS
 endif
 
-cat <<EOFTMP >> $pbsfile
-setenv TMPDIR /glade/scratch/$USER/vectemp
-mkdir -p $TMPDIR
-
-EOFTMP
-
 
 ## add module load commands, etc.
 cat $env >> $pbsfile
