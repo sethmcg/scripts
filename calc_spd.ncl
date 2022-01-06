@@ -39,14 +39,16 @@ att_names = getvaratts(finu)
 do i = 0,dimsizes(att_names)-1
   if(att_names(i) .eq. "history_of_appended_files") then
     ;; skip
-  else if(att_names(i) .eq. "title") then
-    title = str_sub_str(finu@title, "Velocity","Speed")
-    title = str_sub_str(title, "Eastward","")
-    title = str_sub_str(title, "Northward","")
-    title = str_sub_str(title, "  "," ")
-    fout@title = title
   else 
-    fout@$att_names(i)$ = finu@$att_names(i)$
+    if (att_names(i) .eq. "title") then
+      title = str_sub_str(finu@title, "Velocity","Speed")
+      title = str_sub_str(title, "Eastward","")
+      title = str_sub_str(title, "Northward","")
+      title = str_sub_str(title, "  "," ")
+      fout@title = title
+    else 
+      fout@$att_names(i)$ = finu@$att_names(i)$
+    end if
   end if
 end do
 
