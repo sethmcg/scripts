@@ -305,7 +305,14 @@ if ($QUEUE != share && $QUEUE != casper) then
   sed -i "s|\(.*\)|bash -c '\1'|g" $dir/cmd 
 endif
 if($NJOBS > 1 && $QUEUE != share) then
-  split -a 4 --numeric-suffix=1 -nl/$NJOBS $1 $dir/cmd.  
+  if($QUEUE == casper) then
+    split -a 4 --numeric-suffix=1 --lines=1 $1 $dir/cmd.
+    # using -nl/N, where N = number of lines in file, gets weird with
+    # very long lines, and can generate empty files (which then hang
+    # until they timeout)
+  else
+    split -a 4 --numeric-suffix=1 -nl/$NJOBS $1 $dir/cmd.
+  endif
   ## need to strip leading zeros for PBS job array handling
   rename cmd.0 cmd. $dir/cmd*
   rename cmd.0 cmd. $dir/cmd*
